@@ -1,7 +1,202 @@
+# Compiles Orbit TV for iPad and Apple TV on GitHub's Mac servers.
+#
+# The source lives in OrbitTV-source.tar.gz. Uploading a new copy of that file starts a build:
+#   1. "Unpack source" copies the bundle's contents into the repository so the code can be browsed.
+#   2. "iPad" and "AppleTV" compile the apps; the unsigned .ipa files appear under Artifacts.
+#   3. "Publish results" writes a short error report to the ci-logs branch.
 name: Build
-on: workflow_dispatch
+
+on:
+  push:
+    branches: [main]
+    paths: ['OrbitTV-source.tar.gz']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
 jobs:
-  placeholder:
+  unpack:
+    name: Unpack source
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace the browsable source tree with the bundle's contents
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/src"
+          tar -xzf OrbitTV-source.tar.gz -C "$RUNNER_TEMP/src" --strip-components=1
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name OrbitTV-source.tar.gz -exec rm -rf {} +
+          cp -R "$RUNNER_TEMP/src/." .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -q -m "Unpack source bundle (build ${{ github.run_number }})"
+          git push
+
+  engine-tests:
+    name: Engine tests
+    runs-on: macos-26
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack the source bundle
+        run: tar -xzf OrbitTV-source.tar.gz --strip-components=1
+      - name: Run unit tests for the playlist, guide and recording engine
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee test.log
+      - name: Write report
+        if: always()
+        run: |
+          {
+            echo "job: engine-tests"
+            echo "result: ${{ job.status }}"
+            echo "--- errors and failures"
+            grep -E "error:|error -|failed|XCTAssert|Executed [0-9]+ tests" test.log | sed "s#$PWD/##g" | sort -u | head -150 || true
+            echo "--- last lines"
+            tail -n 25 test.log || true
+          } > report-engine-tests.txt
+          cat report-engine-tests.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-engine-tests
+          path: report-engine-tests.txt
+          if-no-files-found: ignore
+
+  apps:
+    name: ${{ matrix.name }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iPad
+            scheme: OrbitTV-iOS
+            platform: iOS
+            products: Release-iphoneos
+          - name: AppleTV
+            scheme: OrbitTV-tvOS
+            platform: tvOS
+            products: Release-appletvos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack the source bundle
+        run: tar -xzf OrbitTV-source.tar.gz --strip-components=1
+
+      - name: Show tool versions
+        run: |
+          xcodebuild -version | tee versions.txt
+          swift --version 2>&1 | tee -a versions.txt
+          xcodebuild -showsdks 2>&1 | tee -a versions.txt
+
+      - name: Make sure the ${{ matrix.platform }} platform is installed
+        run: |
+          if ! xcrun simctl list runtimes 2>/dev/null | grep -q "${{ matrix.platform }}"; then
+            xcodebuild -downloadPlatform "${{ matrix.platform }}" 2>&1 | tail -n 5
+          fi
+
+      - name: Install XcodeGen
+        run: which xcodegen >/dev/null 2>&1 || brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate 2>&1 | tee xcodegen.log
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project OrbitTV.xcodeproj \
+            -scheme "${{ matrix.scheme }}" \
+            -configuration Release \
+            -destination "generic/platform=${{ matrix.platform }}" \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: unused|BUILD |Compiling|Linking|Resolve|Fetching|Computing" || true
+          grep -q "BUILD SUCCEEDED" build.log
+
+      - name: Package the .ipa
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R "build/Build/Products/${{ matrix.products }}/OrbitTV.app" Payload/
+          zip -qry "OrbitTV-${{ matrix.name }}-unsigned.ipa" Payload
+          ls -la "OrbitTV-${{ matrix.name }}-unsigned.ipa" | tee ipa.txt
+          ls Payload/OrbitTV.app | tee -a ipa.txt
+          ls Payload/OrbitTV.app/Frameworks 2>/dev/null | tee -a ipa.txt || true
+
+      - name: Upload the app
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitTV-${{ matrix.name }}-unsigned
+          path: OrbitTV-${{ matrix.name }}-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Write report
+        if: always()
+        run: |
+          {
+            echo "job: ${{ matrix.name }}"
+            echo "result: ${{ job.status }}"
+            echo "--- tools"
+            cat versions.txt 2>/dev/null | head -40 || true
+            echo "--- xcodegen"
+            tail -n 15 xcodegen.log 2>/dev/null || true
+            echo "--- errors"
+            grep -E "error:|error :|fatal error|xcodebuild: error|Undefined symbol|ld: |BUILD (SUCCEEDED|FAILED)" build.log 2>/dev/null | sed "s#$PWD/##g" | awk '!seen[$0]++' | head -300 || true
+            echo "--- last lines of the build log"
+            tail -n 40 build.log 2>/dev/null | sed "s#$PWD/##g" || true
+            echo "--- package"
+            cat ipa.txt 2>/dev/null || true
+          } > "report-${{ matrix.name }}.txt"
+          {
+            echo "### ${{ matrix.name }}"
+            echo '```'
+            head -c 60000 "report-${{ matrix.name }}.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-${{ matrix.name }}
+          path: report-${{ matrix.name }}.txt
+          if-no-files-found: ignore
+
+  report:
+    name: Publish results
+    needs: [engine-tests, apps]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: echo placeholder
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: report-*
+          path: reports
+          merge-multiple: true
+      - name: Push the reports to the ci-logs branch
+        run: |
+          mkdir -p out
+          cp -R reports/. out/ 2>/dev/null || true
+          {
+            echo "run: ${{ github.run_number }}"
+            echo "run_id: ${{ github.run_id }}"
+            echo "commit: ${{ github.sha }}"
+            echo "apps: ${{ needs.apps.result }}"
+            date -u
+          } > out/status.txt
+          cd out
+          git init -q -b ci-logs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Results for build ${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs
