@@ -1,0 +1,67 @@
+# Orbit TV project definition for XcodeGen (https://github.com/yonaskolb/XcodeGen).
+# Run `xcodegen generate` to produce OrbitTV.xcodeproj. The cloud build does this for you.
+#
+# To rename the app: change CFBundleDisplayName in Config/iOS-Info.plist and Config/tvOS-Info.plist.
+# To use your own bundle identifier: replace com.example.orbittv below (the TestFlight workflow does
+# this automatically from the BUNDLE_ID repository variable).
+name: OrbitTV
+
+options:
+  bundleIdPrefix: com.example
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "16.0"
+    tvOS: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    GENERATE_INFOPLIST_FILE: "NO"
+    DEAD_CODE_STRIPPING: "YES"
+
+packages:
+  VLCKitSPM:
+    url: https://github.com/tylerjonesio/vlckit-spm
+    exactVersion: "3.6.0"
+
+targets:
+  OrbitTV-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Core
+      - path: App/Shared
+      - path: App/iOS
+    dependencies:
+      - package: VLCKitSPM
+    settings:
+      base:
+        PRODUCT_NAME: OrbitTV
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.orbittv
+        INFOPLIST_FILE: Config/iOS-Info.plist
+        TARGETED_DEVICE_FAMILY: "2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+    scheme: {}
+
+  OrbitTV-tvOS:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Core
+      - path: App/Shared
+      - path: App/tvOS
+    dependencies:
+      - package: VLCKitSPM
+    settings:
+      base:
+        PRODUCT_NAME: OrbitTV
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.orbittv
+        INFOPLIST_FILE: Config/tvOS-Info.plist
+        TARGETED_DEVICE_FAMILY: "3"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        CODE_SIGN_STYLE: Automatic
+    scheme: {}
