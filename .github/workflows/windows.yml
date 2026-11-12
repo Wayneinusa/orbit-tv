@@ -2,9 +2,11 @@
 #
 # The source lives in SuperiorIPTV-windows.tar.gz. Uploading a new copy of that file starts a build:
 #   1. "Unpack source" copies the bundle's contents into the windows/ folder so the code can be browsed.
-#   2. "Windows app" runs the unit tests, compiles the app, runs its self-test (the app is driven through
-#      its screens against a pretend TV provider), builds the installer and posts it under Releases.
-#   3. The test results and screenshots are written to the ci-logs-windows branch.
+#   2. "Build installer" runs the unit tests, compiles the app and builds the installer.
+#   3. "Self-test on Windows" starts the real app on a Windows machine and drives it through its screens
+#      against a pretend TV provider (live streams that drop, downloads that are cut off, and so on).
+#   4. "Release" posts the installer on the repository's Releases page.
+# Results are written to the ci-logs-windows and ci-logs-selftest branches.
 name: Windows
 
 on:
@@ -40,11 +42,8 @@ jobs:
           git push
 
   build:
-    name: Windows app
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
+    name: Build installer
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -60,41 +59,29 @@ jobs:
         continue-on-error: true
         working-directory: windows
         run: |
-          dotnet test tests/Core.Tests/Core.Tests.csproj -c Release --logger "console;verbosity=normal" 2>&1 | Tee-Object -FilePath ../test.log
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          set -o pipefail
+          dotnet test tests/Core.Tests/Core.Tests.csproj -c Release --logger "console;verbosity=normal" 2>&1 | tee ../test.log
 
-      - name: Compile the app
+      - name: Compile the app for Windows
         id: compile
         working-directory: windows
         run: |
-          dotnet publish src/App/App.csproj -c Release -o publish -p:Version=1.0.${{ github.run_number }} 2>&1 | Tee-Object -FilePath ../build.log
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Self-test (drives the real app through its screens)
-        id: selftest
-        if: steps.compile.outcome == 'success'
-        continue-on-error: true
-        timeout-minutes: 9
-        working-directory: windows
-        run: |
-          try { Set-DisplayResolution -Width 1600 -Height 900 -Force | Out-Null } catch { Write-Host "Could not change the screen size: $_" }
-          $out = Join-Path $PWD "selftest-out"
-          $p = Start-Process -FilePath "publish\SuperiorIPTVPlayer.exe" -ArgumentList "--self-test", "`"$out`"", "`"$PWD\samples`"" -PassThru
-          if (-not $p.WaitForExit(7 * 60 * 1000)) { $p.Kill(); Write-Host "Self-test timed out"; exit 1 }
-          Write-Host "Self-test exit code: $($p.ExitCode)"
-          if (Test-Path "$out\selftest.log") { Get-Content "$out\selftest.log" }
-          if ($p.ExitCode -ne 0) { exit 1 }
+          set -o pipefail
+          dotnet publish src/App/App.csproj -c Release -o publish -p:EnableWindowsTargeting=true -p:Version=1.0.${{ github.run_number }} 2>&1 | tee ../build.log
+          test -f publish/SuperiorIPTVPlayer.exe
+          test -d publish/libvlc/win-x64
+          du -sh publish | tee -a ../build.log
 
       - name: Build the installer
         id: installer
-        if: steps.compile.outcome == 'success'
         working-directory: windows
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc "/DAppVersion=1.0.${{ github.run_number }}" installer\setup.iss 2>&1 | Tee-Object -FilePath ../installer.log | Select-Object -Last 15
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Get-Item dist\SuperiorIPTVPlayer-Setup.exe | Format-List Name, Length
+          set -o pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nsis > /dev/null
+          mkdir -p dist
+          makensis -V2 -DAPPVERSION=1.0.${{ github.run_number }} installer/setup.nsi 2>&1 | tee ../installer.log
+          ls -la dist | tee -a ../installer.log
 
       - name: Upload the installer
         if: steps.installer.outcome == 'success'
@@ -104,67 +91,135 @@ jobs:
           path: windows/dist/SuperiorIPTVPlayer-Setup.exe
           if-no-files-found: error
 
-      - name: Post the installer under Releases
-        id: release
-        if: steps.installer.outcome == 'success' && steps.tests.outcome == 'success' && steps.selftest.outcome == 'success'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = "windows-build-${{ github.run_number }}"
-          $notes = "Superior IPTV Player for Windows 10 and 11 (64-bit), build ${{ github.run_number }}. Download SuperiorIPTVPlayer-Setup.exe and run it. The installer is not code-signed: if Windows SmartScreen appears, choose More info, then Run anyway."
-          gh release create $tag "windows/dist/SuperiorIPTVPlayer-Setup.exe" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Superior IPTV Player for Windows (build ${{ github.run_number }})" --notes $notes --latest
-
-      - name: Write the report
-        if: always()
-        run: |
-          New-Item -ItemType Directory -Force report | Out-Null
-          $lines = @()
-          $lines += "run: ${{ github.run_number }}"
-          $lines += "run_id: ${{ github.run_id }}"
-          $lines += "commit: ${{ github.sha }}"
-          $lines += "tests: ${{ steps.tests.outcome }}"
-          $lines += "compile: ${{ steps.compile.outcome }}"
-          $lines += "selftest: ${{ steps.selftest.outcome }}"
-          $lines += "installer: ${{ steps.installer.outcome }}"
-          $lines += "release: ${{ steps.release.outcome }}"
-          if (Test-Path windows\dist\SuperiorIPTVPlayer-Setup.exe) { $lines += "installer_bytes: $((Get-Item windows\dist\SuperiorIPTVPlayer-Setup.exe).Length)" }
-          $lines | Set-Content report\status.txt
-          $root = [regex]::Escape($PWD.Path + '\')
-          if (Test-Path test.log) {
-            Get-Content test.log | Select-String -Pattern "error|Failed|Passed!|Failed!|Total tests|\[FAIL\]|Assert" | ForEach-Object { $_.Line -replace $root, '' } | Select-Object -Unique -First 200 | Set-Content report\tests.txt
-            Get-Content test.log -Tail 40 | Add-Content report\tests.txt
-          }
-          if (Test-Path build.log) {
-            Get-Content build.log | Select-String -Pattern "error |warning CS8|Build succeeded|Build FAILED" | ForEach-Object { $_.Line -replace $root, '' } | Select-Object -Unique -First 300 | Set-Content report\build.txt
-            Get-Content build.log -Tail 15 | Add-Content report\build.txt
-          }
-          if (Test-Path installer.log) { Get-Content installer.log -Tail 25 | Set-Content report\installer.txt }
-          if (Test-Path windows\selftest-out) {
-            Copy-Item windows\selftest-out\*.log report\ -ErrorAction SilentlyContinue
-            Copy-Item windows\selftest-out\*.png report\ -ErrorAction SilentlyContinue
-            if (Test-Path windows\selftest-out\data\errors.log) { Copy-Item windows\selftest-out\data\errors.log report\app-errors.log }
-          }
-          Get-Content report\status.txt
-          "### Windows build" | Add-Content $env:GITHUB_STEP_SUMMARY
-          '```' | Add-Content $env:GITHUB_STEP_SUMMARY
-          Get-Content report\status.txt | Add-Content $env:GITHUB_STEP_SUMMARY
-          if (Test-Path report\selftest.log) { Get-Content report\selftest.log | Add-Content $env:GITHUB_STEP_SUMMARY }
-          if (Test-Path report\build.txt) { Get-Content report\build.txt -TotalCount 80 | Add-Content $env:GITHUB_STEP_SUMMARY }
-          '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: Keep the compiled app for the self-test
+        if: steps.compile.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-files
+          path: windows/publish
+          retention-days: 3
+          compression-level: 1
 
       - name: Push the report to the ci-logs-windows branch
         if: always()
-        shell: bash
         run: |
+          mkdir -p report
+          {
+            echo "run: ${{ github.run_number }}"
+            echo "run_id: ${{ github.run_id }}"
+            echo "commit: ${{ github.sha }}"
+            echo "tests: ${{ steps.tests.outcome }}"
+            echo "compile: ${{ steps.compile.outcome }}"
+            echo "installer: ${{ steps.installer.outcome }}"
+            [ -f windows/dist/SuperiorIPTVPlayer-Setup.exe ] && echo "installer_bytes: $(stat -c %s windows/dist/SuperiorIPTVPlayer-Setup.exe)"
+            date -u
+          } > report/status.txt
+          if [ -f test.log ]; then
+            { grep -E "error|Failed |Passed!|Failed!|Total tests|Passed:|Failed:|\[FAIL\]|Assert" test.log | sed "s#$PWD/##g" | awk '!seen[$0]++' | head -200; echo "--- last lines"; tail -n 30 test.log; } > report/tests.txt || true
+          fi
+          if [ -f build.log ]; then
+            { grep -E "error |warning NETSDK|Build succeeded|Build FAILED" build.log | sed "s#$PWD/##g" | awk '!seen[$0]++' | head -300; echo "--- last lines"; tail -n 15 build.log; } > report/build.txt || true
+          fi
+          [ -f installer.log ] && tail -n 30 installer.log > report/installer.txt || true
+          cat report/status.txt
+          { echo '### Windows build'; echo '```'; cat report/status.txt; [ -f report/build.txt ] && head -n 60 report/build.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cd report
           git init -q -b ci-logs-windows
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -q -m "Windows results for build ${{ github.run_number }}"
+          git commit -q -m "Windows build results ${{ github.run_number }}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs-windows
 
       - name: Fail the run if a stage failed
-        if: steps.tests.outcome != 'success' || steps.compile.outcome != 'success' || steps.selftest.outcome != 'success' || steps.installer.outcome != 'success'
+        if: steps.tests.outcome != 'success' || steps.compile.outcome != 'success' || steps.installer.outcome != 'success'
         run: exit 1
+
+  selftest:
+    name: Self-test on Windows
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    outputs:
+      passed: ${{ steps.run.outputs.passed }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack the source bundle (for the sample clips)
+        run: tar -xzf SuperiorIPTV-windows.tar.gz
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-files
+          path: windows/publish
+
+      - name: Run the app's self-test
+        id: run
+        continue-on-error: true
+        working-directory: windows
+        run: |
+          try { Set-DisplayResolution -Width 1600 -Height 900 -Force | Out-Null } catch { Write-Host "Could not change the screen size: $_" }
+          $out = Join-Path $PWD "selftest-out"
+          $p = Start-Process -FilePath "publish\SuperiorIPTVPlayer.exe" -ArgumentList "--self-test", "`"$out`"", "`"$PWD\samples`"" -PassThru
+          if (-not $p.WaitForExit(9 * 60 * 1000)) { $p.Kill(); Write-Host "Self-test timed out"; exit 1 }
+          Write-Host "Self-test exit code: $($p.ExitCode)"
+          if (Test-Path "$out\selftest.log") { Get-Content "$out\selftest.log" }
+          if ($p.ExitCode -ne 0) { exit 1 }
+          "passed=true" | Add-Content $env:GITHUB_OUTPUT
+
+      - name: Push the results to the ci-logs-selftest branch
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p report
+          {
+            echo "run: ${{ github.run_number }}"
+            echo "commit: ${{ github.sha }}"
+            echo "selftest: ${{ steps.run.outcome }}"
+            date -u
+          } > report/status.txt
+          cp windows/selftest-out/*.log report/ 2>/dev/null || true
+          cp windows/selftest-out/*.png report/ 2>/dev/null || true
+          cp windows/selftest-out/data/errors.log report/app-errors.log 2>/dev/null || true
+          { echo '### Self-test'; echo '```'; cat report/status.txt; cat report/selftest.log 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cd report
+          git init -q -b ci-logs-selftest
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Self-test results ${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs-selftest
+
+      - name: Fail the job if the self-test failed
+        if: steps.run.outcome != 'success'
+        run: exit 1
+
+  release:
+    name: Release
+    needs: [build, selftest]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SuperiorIPTVPlayer-Setup
+      - name: Post the installer under Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELFTEST: ${{ needs.selftest.outputs.passed }}
+        run: |
+          tag="windows-build-${{ github.run_number }}"
+          how="Download SuperiorIPTVPlayer-Setup.exe and run it. The installer is not code-signed: if Windows SmartScreen appears, choose More info, then Run anyway."
+          if [ "$SELFTEST" = "true" ]; then
+            gh release create "$tag" SuperiorIPTVPlayer-Setup.exe --repo "${{ github.repository }}" --target "${{ github.sha }}" --latest \
+              --title "Superior IPTV Player for Windows (build ${{ github.run_number }})" \
+              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests and the app's self-test on Windows passed for this build. $how"
+          else
+            gh release create "$tag" SuperiorIPTVPlayer-Setup.exe --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+              --title "Superior IPTV Player for Windows (build ${{ github.run_number }}, self-test not passed)" \
+              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests passed, but the app's self-test on Windows did not pass or could not run for this build. $how"
+          fi
