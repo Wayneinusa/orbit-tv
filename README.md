@@ -1,14 +1,14 @@
-# Orbit TV
+# Superior IPTV Player for iPad and Apple TV
 
 An IPTV player for iPad and Apple TV, written in SwiftUI with one shared codebase. Its layout and feature set follow the approach of TiviMate on Android (group list, channel list with now/next, preview pane, timeline guide, catch-up, recording, multi-view) under its own name, icon and artwork.
 
-Orbit TV is a player only. It contains no channels; you add the playlist your own TV provider gives you.
+Superior IPTV Player is a player only. It contains no channels; you add the playlist your own TV provider gives you.
 
-## Status: read this first
+## Status
 
-The code in this folder has **not been compiled yet**. Apple apps can only be built on a Mac, and this project was written without one. Every file passed a structural check and the logic was reviewed by hand, but the first cloud build may stop on compiler errors. That is expected: the build prints a short error list made for copying, and sending that list back to Claude is the quickest way to get them fixed.
+Both apps compile on GitHub's Mac servers and the engine's unit tests pass. Neither app has been run on a real iPad or Apple TV yet, so playback, recording and MP4 conversion on the devices themselves are still untested. The remaining uncertainties are listed under "Known risks" at the end.
 
-The parts with the most uncertainty are listed under "Known risks" at the end.
+The Windows version lives in the `windows/` folder and has its own README there.
 
 ## What is included
 
@@ -32,18 +32,13 @@ If the stream stops for any reason (server hiccup, Wi-Fi drop, timeout, an error
 
 When a recording finishes it is converted to `.mp4` without re-encoding, so there is no quality loss. This is on by default (Settings › Recording). With it off, each finished recording has a "Convert to MP4" action in the Recordings screen. If a conversion fails, the `.ts` file is kept and still plays.
 
-On iPad, recordings appear in the Files app under On My iPad › Orbit TV › Recordings.
+On iPad, recordings appear in the Files app under On My iPad › Superior IPTV › Recordings.
 
-## Step 1: build the apps (from Windows, no Mac needed)
+## Step 1: get the app files
 
-The build runs on GitHub's Mac servers.
+The apps are built on GitHub's Mac servers. Open the repository's **Actions** tab, choose the latest successful **Build** run, and download `OrbitTV-iPad-unsigned` and `OrbitTV-AppleTV-unsigned` from **Artifacts** (you must be signed in to GitHub). Each is a zip containing an `.ipa` file. The files keep their original project name; the installed app is called Superior IPTV Player.
 
-1. Create a free account at github.com and create a new repository (for example `orbit-tv`). Public repositories get unlimited free build time. A private repository also works; the free monthly allowance covers roughly eight to ten builds because Mac build minutes are billed at a higher rate.
-2. Unzip this project. On the repository page choose **Add file › Upload files**, then drag in **everything inside** the unzipped folder, including the `.github` folder. Commit to the `main` branch.
-3. Open the **Actions** tab. A run called **Build** starts by itself and takes roughly 10 to 20 minutes.
-4. When it finishes, open the run. Under **Artifacts** you will find `OrbitTV-iPad-unsigned` and `OrbitTV-AppleTV-unsigned`. Each is a zip containing an `.ipa` file.
-
-If the run fails, its summary page shows a box titled "compiler errors". Copy that box and send it to Claude.
+The source is uploaded as one bundle, `OrbitTV-source.tar.gz`. Uploading a new copy of that file starts a build, and the build unpacks it into the repository so the code can be browsed.
 
 ## Step 2: install on your devices
 
@@ -62,7 +57,7 @@ This needs the paid Apple Developer Program (99 USD per year). It is the only pr
    - Secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (open the `.p8` file in Notepad and paste the whole text), `APPLE_TEAM_ID`
    - Variable (the Variables tab): `BUNDLE_ID` with your bundle identifier
 7. In the Actions tab choose **TestFlight › Run workflow**.
-8. Install the TestFlight app on the iPad and the Apple TV, sign in with the same Apple ID, and install Orbit TV from there once Apple has finished processing the upload.
+8. Install the TestFlight app on the iPad and the Apple TV, sign in with the same Apple ID, and install Superior IPTV Player from there once Apple has finished processing the upload.
 
 TestFlight builds expire after a limited time (90 days at the time of writing). Running the workflow again uploads a fresh one.
 
@@ -82,7 +77,7 @@ Add a playlist on first launch: either an Xtream Codes login (server, username, 
 
 ## Limits that come from Apple, not from the app
 
-- **Recording only runs while the app is open.** iPadOS and tvOS suspend apps shortly after they leave the screen. A scheduled recording starts on time only if Orbit TV is open; a recording that was interrupted this way resumes when you come back. The screen is kept awake while a recording is running.
+- **Recording only runs while the app is open.** iPadOS and tvOS suspend apps shortly after they leave the screen. A scheduled recording starts on time only if Superior IPTV Player is open; a recording that was interrupted this way resumes when you come back. The screen is kept awake while a recording is running.
 - **Apple TV has no permanent app storage.** Recordings on Apple TV are kept in the app's cache, which tvOS may clear when it runs low on space, and there is no way to copy them off the device. For recordings you want to keep, use the iPad.
 - **Each multi-view tile uses one connection** from your provider. Many subscriptions allow only one or two at a time.
 

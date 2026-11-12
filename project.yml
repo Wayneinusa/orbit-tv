@@ -1,4 +1,4 @@
-# Orbit TV project definition for XcodeGen (https://github.com/yonaskolb/XcodeGen).
+# Superior IPTV Player project definition for XcodeGen (https://github.com/yonaskolb/XcodeGen).
 # Run `xcodegen generate` to produce OrbitTV.xcodeproj. The cloud build does this for you.
 #
 # To rename the app: change CFBundleDisplayName in Config/iOS-Info.plist and Config/tvOS-Info.plist.

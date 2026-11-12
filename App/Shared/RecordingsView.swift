@@ -93,7 +93,7 @@ struct RecordingsView: View {
         #if os(tvOS)
         return "Apple TV gives apps no permanent storage. Recordings are kept in the app's cache and tvOS may remove them when space runs low, so watch them soon."
         #else
-        return "Recordings are saved in the Files app under On My iPad › Orbit TV › Recordings."
+        return "Recordings are saved in the Files app under On My iPad › Superior IPTV › Recordings."
         #endif
     }
 

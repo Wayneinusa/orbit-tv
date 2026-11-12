@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Orbit TV</string>
+	<string>Superior IPTV</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -63,6 +63,6 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Orbit TV connects to media servers on your home network when your playlist points to one.</string>
+	<string>Superior IPTV Player connects to media servers on your home network when your playlist points to one.</string>
 </dict>
 </plist>

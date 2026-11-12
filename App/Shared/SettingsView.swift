@@ -114,8 +114,8 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    Text("Orbit TV " + SettingsView.version)
-                    Text("Orbit TV is a media player. It contains no channels or content; you add a playlist supplied by your own TV provider.")
+                    Text("Superior IPTV Player " + SettingsView.version)
+                    Text("Superior IPTV Player is a media player. It contains no channels or content; you add a playlist supplied by your own TV provider.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

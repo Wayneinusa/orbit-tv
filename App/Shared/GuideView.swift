@@ -301,7 +301,7 @@ struct ProgrammeDetailView: View {
                                                 userAgent: model.userAgent(for: channel.playlistID, channel: channel))
                             dismiss()
                         }
-                        Text("Keep Orbit TV open at the scheduled time. Apple does not let apps start recording while they are closed.")
+                        Text("Keep Superior IPTV Player open at the scheduled time. Apple does not let apps start recording while they are closed.")
                             .font(.caption)
                             .foregroundColor(Theme.secondaryText)
                     }

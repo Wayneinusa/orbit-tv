@@ -5,7 +5,7 @@ import FoundationNetworking
 
 /// Downloads a playlist and turns it into channels, movies and series.
 enum ContentLoader {
-    static let defaultUserAgent = "OrbitTV/1.0"
+    static let defaultUserAgent = "SuperiorIPTV/1.0"
 
     static func load(playlist: Playlist, liveFormat: String) async throws -> (content: PlaylistContent, timeZone: String) {
         switch playlist.source {
