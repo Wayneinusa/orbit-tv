@@ -142,7 +142,7 @@ jobs:
     timeout-minutes: 20
     continue-on-error: true
     outputs:
-      passed: ${{ steps.run.outputs.passed }}
+      passed: ${{ steps.overall.outputs.passed }}
     defaults:
       run:
         shell: pwsh
@@ -169,6 +169,63 @@ jobs:
           Write-Host "Self-test exit code: $($p.ExitCode)"
           if (Test-Path "$out\selftest.log") { Get-Content "$out\selftest.log" }
           if ($p.ExitCode -ne 0) { exit 1 }
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: SuperiorIPTVPlayer-Setup
+          path: installer-test
+
+      - name: Install and uninstall the app with the real installer
+        id: install
+        continue-on-error: true
+        run: |
+          $log = Join-Path $PWD "install-test.log"
+          function Say($text) { Write-Host $text; Add-Content -Path $log -Value $text }
+          try {
+            $setup = Join-Path $PWD "installer-test\SuperiorIPTVPlayer-Setup.exe"
+            Say "Installer size: $((Get-Item $setup).Length) bytes"
+            $p = Start-Process -FilePath $setup -ArgumentList "/S" -PassThru
+            if (-not $p.WaitForExit(5 * 60 * 1000)) { $p.Kill(); throw "The installer timed out" }
+            Say "Installer exit code: $($p.ExitCode)"
+            if ($p.ExitCode -ne 0) { throw "The installer reported an error" }
+            $dir = Join-Path $env:LOCALAPPDATA "Programs\Superior IPTV Player"
+            foreach ($item in @("SuperiorIPTVPlayer.exe", "app.ico", "Uninstall.exe", "libvlc\win-x64\libvlc.dll")) {
+              if (-not (Test-Path (Join-Path $dir $item))) { throw "Missing after installing: $item" }
+            }
+            $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Superior IPTV Player.lnk"
+            $desktop = Join-Path ([Environment]::GetFolderPath("Desktop")) "Superior IPTV Player.lnk"
+            if (-not (Test-Path $startMenu)) { throw "The Start menu shortcut is missing" }
+            if (-not (Test-Path $desktop)) { throw "The desktop shortcut is missing" }
+            $entry = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\SuperiorIPTVPlayer"
+            Say "Listed in Windows as: $($entry.DisplayName) $($entry.DisplayVersion)"
+            $files = (Get-ChildItem $dir -Recurse -File | Measure-Object -Property Length -Sum)
+            Say "Installed $($files.Count) files, $([math]::Round($files.Sum / 1MB)) MB, into $dir"
+            # The installed copy must start and stay running.
+            $app = Start-Process -FilePath (Join-Path $dir "SuperiorIPTVPlayer.exe") -PassThru
+            Start-Sleep -Seconds 12
+            if ($app.HasExited) { throw "The installed app exited by itself (code $($app.ExitCode))" }
+            $app.Refresh()
+            Say "The installed app started and kept running (window title: '$($app.MainWindowTitle)')"
+            $app.Kill(); $app.WaitForExit(10000) | Out-Null
+            Start-Sleep -Seconds 2
+            $u = Start-Process -FilePath (Join-Path $dir "Uninstall.exe") -ArgumentList "/S", "_?=$dir" -PassThru
+            if (-not $u.WaitForExit(3 * 60 * 1000)) { $u.Kill(); throw "The uninstaller timed out" }
+            Say "Uninstaller exit code: $($u.ExitCode)"
+            if (Test-Path (Join-Path $dir "SuperiorIPTVPlayer.exe")) { throw "The app is still there after uninstalling" }
+            if (Test-Path (Join-Path $dir "libvlc")) { throw "The video engine is still there after uninstalling" }
+            if (Test-Path $startMenu) { throw "The Start menu shortcut is still there after uninstalling" }
+            if (Test-Path $desktop) { throw "The desktop shortcut is still there after uninstalling" }
+            Say "Uninstall removed the app and its shortcuts"
+            Say "INSTALL TEST PASSED"
+          } catch {
+            Say "INSTALL TEST FAILED: $_"
+            exit 1
+          }
+
+      - name: Record the overall result
+        id: overall
+        if: steps.run.outcome == 'success' && steps.install.outcome == 'success'
+        run: |
           "passed=true" | Add-Content $env:GITHUB_OUTPUT
 
       - name: Push the results to the ci-logs-selftest branch
@@ -180,9 +237,11 @@ jobs:
             echo "run: ${{ github.run_number }}"
             echo "commit: ${{ github.sha }}"
             echo "selftest: ${{ steps.run.outcome }}"
+            echo "install_test: ${{ steps.install.outcome }}"
             date -u
           } > report/status.txt
           cp windows/selftest-out/*.log report/ 2>/dev/null || true
+          cp install-test.log report/ 2>/dev/null || true
           cp windows/selftest-out/*.png report/ 2>/dev/null || true
           cp windows/selftest-out/data/errors.log report/app-errors.log 2>/dev/null || true
           { echo '### Self-test'; echo '```'; cat report/status.txt; cat report/selftest.log 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -194,8 +253,8 @@ jobs:
           git commit -q -m "Self-test results ${{ github.run_number }}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs-selftest
 
-      - name: Fail the job if the self-test failed
-        if: steps.run.outcome != 'success'
+      - name: Fail the job if a check failed
+        if: steps.run.outcome != 'success' || steps.install.outcome != 'success'
         run: exit 1
 
   release:
@@ -217,9 +276,9 @@ jobs:
           if [ "$SELFTEST" = "true" ]; then
             gh release create "$tag" SuperiorIPTVPlayer-Setup.exe --repo "${{ github.repository }}" --target "${{ github.sha }}" --latest \
               --title "Superior IPTV Player for Windows (build ${{ github.run_number }})" \
-              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests and the app's self-test on Windows passed for this build. $how"
+              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests, the app's self-test on Windows and an install/uninstall test passed for this build. $how"
           else
             gh release create "$tag" SuperiorIPTVPlayer-Setup.exe --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
               --title "Superior IPTV Player for Windows (build ${{ github.run_number }}, self-test not passed)" \
-              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests passed, but the app's self-test on Windows did not pass or could not run for this build. $how"
+              --notes "Superior IPTV Player for Windows 10 and 11 (64-bit). Unit tests passed, but the self-test or the install test on Windows did not pass or could not run for this build. $how"
           fi
