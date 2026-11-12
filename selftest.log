@@ -1,0 +1,27 @@
+12:10:56.655  Self-test starting. Scale 1, screen {X=0,Y=0,Width=1600,Height=900}, OS Microsoft Windows NT 10.0.26100.0
+12:10:57.446  PASS  Playlist loads
+12:10:57.446  PASS  Channels, movies and series are sorted into their libraries   [12 channels, 6 movies, 2 series]
+12:10:57.473  PASS  Guide loads   [12 channels with listings; Guide updated 11/12/2026 12:10 PM]
+12:10:59.412  PASS  Live channel plays in the preview   [status Playing, time 90 ms]
+12:11:01.687  PASS  Player opens for the live channel
+12:11:01.687  PASS  Speed control is not offered for live channels
+12:11:03.770  PASS  Channel up switches channel   [Capital News]
+12:12:04.590  PASS  Recording finishes   [Completed, 1579997 bytes, ]
+12:12:04.590  PASS  Recording resumed automatically after the stream dropped   [resumed 21 time(s)]
+12:12:04.591  PASS  Recording was converted to MP4   [mp4 1579997 bytes, ts kept: False]
+12:12:04.591  note  Converter said: source 2131920 bytes, output 1579997 bytes | Error mmdevice: cannot get default device (error 0x80070490) | Error mmdevice: cannot get device identifier (error 0x80070490) | Debug stream_out_standard: using `file/mp4://D:/a/orbit-tv/orbit-tv/windows/selftest-out/recordings/2026-11-12 12-11 Flaky Channel - Self-test recording.mp4' | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning ts: discontinuity received 0x5 instead of 0x1 (pid=257) | Warning ts: discontinuity received 0x4 instead of 0xa (pid=256) | Warning ts: discontinuity received 0x2 instead of 0x0 (pid=256) | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0x8 instead of 0xc (pid=257) | Warning ts: discontinuity received 0xb instead of 0x7 (pid=256) | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0x7 instead of 0x5 (pid=256) | Warning ts: discontinuity received 0x3 instead of 0x5 (pid=0) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 3, expected 5) for PID 0 | Warning ts: discontinuity received 0x3 instead of 0x5 (pid=4096) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 3, expected 5) for PID 4096 | Warning ts: discontinuity received 0xe instead of 0x0 (pid=256) | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0x3 instead of 0xa (pid=257) | Warning ts: discontinuity received 0xe instead of 0x9 (pid=256) | Warning mp4: i_length <= 0 | Warning mp4: i_length <= 0 | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0xb instead of 0x7 (pid=256) | Warning ts: discontinuity received 0x0 instead of 0x4 (pid=257) | Warning ts: discontinuity received 0x4 instead of 0x3 (pid=256) | Warning ts: discontinuity received 0xa instead of 0xd (pid=256) | Warning ts: discontinuity received 0x0 instead of 0xd (pid=257) | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0xf instead of 0x1 (pid=256) | Warning ts: discontinuity received 0xf instead of 0xd (pid=256) | Warning mp4: i_length <= 0 | Warning mp4: i_length <= 0 | Warning main: no more input streams for this mux
+12:12:05.617  PASS  An uninterrupted .ts capture converts to MP4   [source 3536656 bytes, output 2830080 bytes | Error mmdevice: cannot get default device (error 0x80070490) | Error mmdevice: cannot get device identifier (error 0x80070490) | Debug stream_out_standard: using `file/mp4://D:/a/orbit-tv/orbit-tv/windows/selftest-out/clean capture.mp4' | Warning main: no more input streams for this mux]
+12:12:10.472  PASS  Movie plays   [status Playing, 154 of 40000 ms]
+12:12:10.472  PASS  Speed control is offered for movies
+12:12:18.545  PASS  4× speed plays faster than real time   [8960 ms of film in 2000 ms]
+12:12:19.353  PASS  Download can be started while the movie is open
+12:12:19.366  PASS  Several movies can be queued together   [5 in the list]
+12:12:21.070  PASS  A download can be paused
+12:12:26.814  PASS  All downloads finish   [Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981]
+12:12:26.815  PASS  Downloads resumed automatically after dropped connections   [4 automatic resume(s)]
+12:12:26.815  PASS  Downloaded files are complete   [1440981, 1440981, 1440981, 1440981, 1440981 (expected 1440981)]
+12:12:28.861  PASS  Downloaded file plays   [status Playing, 157 of 40000 ms]
+12:12:31.367  PASS  8× speed works on a downloaded file   [15496 ms of film in 1500 ms]
+12:12:32.776  PASS  Recording plays   [status Playing, 410 of 57131 ms, file 2026-11-12 12-11 Flaky Channel - Self-test recording.mp4]
+12:12:32.776  PASS  Speed control is offered for recordings
+12:12:34.084  Self-test finished with 0 failure(s).
