@@ -1,0 +1,4 @@
+total 86200
+drwxr-xr-x 2 runner runner     4096 Nov 12 12:01 .
+drwxr-xr-x 9 runner runner     4096 Nov 12 12:01 ..
+-rw-r--r-- 1 runner runner 88257707 Nov 12 12:03 SuperiorIPTVPlayer-Setup.exe

@@ -1,0 +1,8 @@
+run: 4
+run_id: 43214040809
+commit: c044c56c94c917c94a12fa61ea9917e735054df5
+tests: success
+compile: success
+installer: success
+installer_bytes: 88257707
+Thu Nov 12 12:03:39 UTC 2026

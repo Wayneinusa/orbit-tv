@@ -1,0 +1,8 @@
+--- last lines
+  Determining projects to restore...
+  Restored /home/runner/work/orbit-tv/orbit-tv/windows/src/Core/Core.csproj (in 735 ms).
+  Restored /home/runner/work/orbit-tv/orbit-tv/windows/src/App/App.csproj (in 4.43 sec).
+  Core -> /home/runner/work/orbit-tv/orbit-tv/windows/src/Core/bin/Release/net10.0/SuperiorIptv.Core.dll
+  App -> /home/runner/work/orbit-tv/orbit-tv/windows/src/App/bin/Release/net10.0-windows/win-x64/SuperiorIPTVPlayer.dll
+  App -> /home/runner/work/orbit-tv/orbit-tv/windows/publish/
+309M	publish

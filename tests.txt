@@ -1,0 +1,33 @@
+Total tests: 17
+     Passed: 17
+--- last lines
+  Core.Tests -> /home/runner/work/orbit-tv/orbit-tv/windows/tests/Core.Tests/bin/Release/net10.0/Core.Tests.dll
+Test run for /home/runner/work/orbit-tv/orbit-tv/windows/tests/Core.Tests/bin/Release/net10.0/Core.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.02] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 10.0.15)
+[xUnit.net 00:00:00.78]   Discovering: Core.Tests
+[xUnit.net 00:00:01.77]   Discovered:  Core.Tests
+[xUnit.net 00:00:01.77]   Starting:    Core.Tests
+  Passed SuperiorIptv.Tests.ParserTests.ChannelIdsAreStableBetweenRuns [141 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvParsingAndLookup(gzip: True) [202 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvParsingAndLookup(gzip: False) [36 ms]
+  Passed SuperiorIptv.Tests.ParserTests.HlsPlaylists [13 ms]
+  Passed SuperiorIptv.Tests.ParserTests.ParsesChannelsMoviesAndSeries [8 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvDates [2 ms]
+  Passed SuperiorIptv.Tests.ParserTests.CatchupAddresses [2 ms]
+  Passed SuperiorIptv.Tests.ParserTests.FileNamesAreSafeForWindows [1 ms]
+  Passed SuperiorIptv.Tests.TransferTests.UnfinishedDownloadContinuesAfterAppRestart [1 s]
+  Passed SuperiorIptv.Tests.TransferTests.SeveralDownloadsCanBeQueuedAndRemoved [105 ms]
+  Passed SuperiorIptv.Tests.TransferTests.DownloadResumesAutomaticallyAfterDroppedConnections [660 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordingAppendsToTheSameFileWhenRestarted [2 s]
+  Passed SuperiorIptv.Tests.TransferTests.PauseAndResumeContinueFromTheSamePlace [410 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordingReconnectsEveryTimeTheStreamStops [4 s]
+[xUnit.net 00:00:10.76]   Finished:    Core.Tests
+  Passed SuperiorIptv.Tests.TransferTests.MissingFileFailsInsteadOfRetryingForever [53 ms]
+  Passed SuperiorIptv.Tests.TransferTests.DownloadStartsOverWhenServerCannotResume [406 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordsHlsStreamsSegmentBySegment [12 ms]
+
+Test Run Successful.
+Total tests: 17
+     Passed: 17
+ Total time: 22.9504 Seconds
