@@ -288,7 +288,9 @@ public sealed class DownloadManager : IDisposable
                     {
                         item.Resumes++;
                         item.BytesPerSecond = 0;
-                        item.Message = "Resuming automatically: " + (ex.Message.Length > 120 ? ex.Message[..120] : ex.Message);
+                        // Our own messages are short and plain; anything longer is technical detail from the network layer.
+                        string reason = ex.Message.Length > 0 && ex.Message.Length <= 45 ? ex.Message : "the connection dropped";
+                        item.Message = $"Resuming automatically ({char.ToLowerInvariant(reason[0])}{reason[1..]})";
                     }
                     Changed?.Invoke();
                     // 1, 2, 4, 8, 16 seconds, then the maximum; the counter resets as soon as data flows again.

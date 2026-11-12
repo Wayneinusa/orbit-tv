@@ -257,6 +257,20 @@ public static class Theme
         {
             combo.FlatStyle = FlatStyle.Flat;
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
+            // Windows paints drop-down lists white whatever BackColor says, so the items are drawn here.
+            combo.DrawMode = DrawMode.OwnerDrawFixed;
+            combo.ItemHeight = S(22);
+            combo.DrawItem += (_, e) =>
+            {
+                bool highlighted = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
+                Fill(e.Graphics, highlighted ? Accent : Raised, e.Bounds);
+                if (e.Index >= 0)
+                {
+                    Prepare(e.Graphics);
+                    DrawText(e.Graphics, combo.GetItemText(combo.Items[e.Index]), Ui(10f), Text,
+                        new Rectangle(e.Bounds.X + S(4), e.Bounds.Y, e.Bounds.Width - S(6), e.Bounds.Height));
+                }
+            };
         }
         if (control is CheckBox check) check.FlatStyle = FlatStyle.Standard;
         return control;

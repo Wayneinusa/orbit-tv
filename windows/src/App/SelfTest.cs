@@ -178,7 +178,15 @@ public static class SelfTest
         Check("Recording resumed automatically after the stream dropped", recording != null && recording.Reconnects >= 2, $"resumed {recording?.Reconnects} time(s)");
         Check("Recording was converted to MP4", recording != null && recording.HasMp4 && File.Exists(recording.Mp4Path),
             recording == null ? "" : $"mp4 {(File.Exists(recording.Mp4Path) ? new FileInfo(recording.Mp4Path).Length : 0)} bytes, ts kept: {File.Exists(recording.TsPath)}");
+        Log("note  Converter said: " + Mp4Converter.LastLog.Replace(Environment.NewLine, " | "));
         await Shot(form, "recordings-done");
+
+        // 3b. Converting an uninterrupted capture, to tell the converter apart from the stitched recording
+        string cleanTs = Path.Combine(outDir, "clean capture.ts"), cleanMp4 = Path.Combine(outDir, "clean capture.mp4");
+        File.Copy(Path.Combine(server.SamplesFolder, "sample.ts"), cleanTs, true);
+        bool cleanConverted = await new Mp4Converter(app.Settings).ConvertAsync(cleanTs, cleanMp4, _ => { }, CancellationToken.None);
+        Check("An uninterrupted .ts capture converts to MP4", cleanConverted && File.Exists(cleanMp4),
+            Mp4Converter.LastLog.Replace(Environment.NewLine, " | "));
 
         // 4. Guide, movies, series, search, settings, multi-view
         form.GoTo("guide");
@@ -200,6 +208,11 @@ public static class SelfTest
         bool moviePlaying = await Wait(() => player.Status == PlayerStatus.Playing && player.DurationMs > 0, 25);
         Check("Movie plays", moviePlaying, $"status {player.Status}, {player.TimeMs} of {player.DurationMs} ms");
         Check("Speed control is offered for movies", player.CanChangeSpeed);
+        await Task.Delay(1500);
+        await Shot(form, "player-movie-1x", true);
+        player.SetRate(2f);
+        await Task.Delay(1500);
+        await Shot(form, "player-movie-2x", true);
         player.SetRate(4f);
         await Task.Delay(1500);
         long before = player.TimeMs;
@@ -254,6 +267,7 @@ public static class SelfTest
             await Task.Delay(1500);
             player.Poll();
             Check("8× speed works on a downloaded file", player.TimeMs - start > 5000, $"{player.TimeMs - start} ms of film in 1500 ms");
+            await Shot(form, "player-download-8x", true);
             form.ClosePlayer();
         }
         recording = app.Recordings.Snapshot().FirstOrDefault();
@@ -277,13 +291,17 @@ public sealed class SampleServer : IDisposable
     private readonly TcpListener listener;
     private readonly byte[] ts, mp4, logo;
     private readonly HashSet<string> droppedOnce = new();
+    private readonly DateTime started = DateTime.UtcNow;
     private volatile bool stopped;
+
+    public string SamplesFolder { get; }
 
     public string Base { get; }
     public long MovieLength => mp4.Length;
 
     public SampleServer(string samples)
     {
+        SamplesFolder = samples;
         ts = File.ReadAllBytes(Path.Combine(samples, "sample.ts"));
         mp4 = File.ReadAllBytes(Path.Combine(samples, "sample.mp4"));
         logo = File.ReadAllBytes(Path.Combine(samples, "logo.png"));
@@ -418,25 +436,25 @@ public sealed class SampleServer : IDisposable
                 }
                 else if (path.StartsWith("/live/", StringComparison.Ordinal) || path.StartsWith("/flaky/", StringComparison.Ordinal))
                 {
-                    // A live stream: the sample clip over and over, sent at its real speed.
+                    // A live stream: the 100-second sample clip sent at its real speed. Like a real channel,
+                    // what you get depends on when you connect, so a reconnect continues later in the clip.
                     // The "flaky" one hangs up after about three seconds, every time.
                     bool flaky = path.StartsWith("/flaky/", StringComparison.Ordinal);
                     await Head(200, "video/mp2t", -1);
-                    const int slices = 100;                       // the clip lasts 10 seconds
+                    const int slices = 1000;                       // a tenth of a second each
                     int slice = ts.Length / slices / 188 * 188;    // whole transport-stream packets
+                    int index = (int)((DateTime.UtcNow - started).TotalSeconds * 10) % slices;
                     DateTime begun = DateTime.UtcNow;
                     int sent = 0;
                     while (!stopped)
                     {
-                        for (int offset = 0; offset + slice <= ts.Length && !stopped; offset += slice)
-                        {
-                            await stream.WriteAsync(ts.AsMemory(offset, slice));
-                            sent++;
-                            if (flaky && sent >= 30) return;
-                            double ahead = sent * 0.1 - (DateTime.UtcNow - begun).TotalSeconds;
-                            // Stay about one second ahead so the player can fill its buffer.
-                            if (ahead > 1) await Task.Delay(TimeSpan.FromSeconds(Math.Min(ahead - 1, 0.5)));
-                        }
+                        await stream.WriteAsync(ts.AsMemory(index * slice, slice));
+                        index = (index + 1) % slices;
+                        sent++;
+                        if (flaky && sent >= 30) return;
+                        double ahead = sent * 0.1 - (DateTime.UtcNow - begun).TotalSeconds;
+                        // Stay about one second ahead so the player can fill its buffer.
+                        if (ahead > 1) await Task.Delay(TimeSpan.FromSeconds(Math.Min(ahead - 1, 0.5)));
                     }
                 }
                 else if (path.StartsWith("/movie/", StringComparison.Ordinal) || path.StartsWith("/series/", StringComparison.Ordinal))

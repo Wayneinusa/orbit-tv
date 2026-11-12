@@ -330,8 +330,12 @@ public sealed class PlayerEngine : IDisposable
     {
         try
         {
-            AudioTracks = player.AudioTrackDescription.Select(t => new TrackOption { Id = t.Id, Name = t.Name ?? "Track" }).ToList();
-            SubtitleTracks = player.SpuDescription.Select(t => new TrackOption { Id = t.Id, Name = t.Name ?? "Track" }).ToList();
+            // VLC adds a "Disable" entry with id -1 to both lists. It is not a real audio track, and for
+            // subtitles it is only useful when there is at least one subtitle to switch off.
+            AudioTracks = player.AudioTrackDescription.Where(t => t.Id != -1)
+                .Select(t => new TrackOption { Id = t.Id, Name = t.Name ?? "Track" }).ToList();
+            List<TrackOption> subtitles = player.SpuDescription.Select(t => new TrackOption { Id = t.Id, Name = t.Name ?? "Track" }).ToList();
+            SubtitleTracks = subtitles.Any(t => t.Id != -1) ? subtitles : new List<TrackOption>();
             CurrentAudio = player.AudioTrack;
             CurrentSubtitle = player.Spu;
         }
@@ -446,6 +450,9 @@ public sealed class Mp4Converter : IMp4Converter
 {
     private readonly Settings settings;
 
+    /// <summary>What VLC reported during the most recent conversion (warnings, errors and writer messages).</summary>
+    public static string LastLog { get; private set; } = "";
+
     public Mp4Converter(Settings settings)
     {
         this.settings = settings;
@@ -471,6 +478,21 @@ public sealed class Mp4Converter : IMp4Converter
         // Forward slashes work for Windows paths and need no escaping inside VLC's option syntax.
         string destination = mp4Path.Replace('\\', '/').Replace("'", "\\'");
         bool engineSucceeded = false;
+
+        var messages = new List<string>();
+        void OnLog(object sender, Vlc.LogEventArgs e)
+        {
+            bool relevant = e.Level >= Vlc.LogLevel.Warning
+                            || (e.Module != null && (e.Module.Contains("mux") || e.Module.Contains("stream_out") || e.Module.Contains("sout")));
+            if (!relevant) return;
+            lock (messages)
+            {
+                if (messages.Count < 60) messages.Add($"{e.Level} {e.Module}: {e.Message}");
+            }
+        }
+        library.Log += OnLog;
+        try
+        {
 
         using (var player = new Vlc.MediaPlayer(library))
         using (var media = new Vlc.Media(library, tsPath, Vlc.FromType.FromPath))
@@ -508,6 +530,12 @@ public sealed class Mp4Converter : IMp4Converter
             }
             player.Stop();
         }
+        }
+        finally
+        {
+            library.Log -= OnLog;
+            lock (messages) LastLog = string.Join(Environment.NewLine, messages);
+        }
 
         if (!engineSucceeded || token.IsCancellationRequested)
         {
@@ -520,6 +548,7 @@ public sealed class Mp4Converter : IMp4Converter
         {
             long sourceSize = new FileInfo(tsPath).Length;
             long outputSize = File.Exists(mp4Path) ? new FileInfo(mp4Path).Length : 0;
+            LastLog = $"source {sourceSize} bytes, output {outputSize} bytes" + Environment.NewLine + LastLog;
             return outputSize > 50_000 && outputSize > sourceSize / 4;
         }
         catch (Exception)
