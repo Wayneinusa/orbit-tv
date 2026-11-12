@@ -33,16 +33,16 @@ An IPTV player for Windows 10 and Windows 11 (64-bit). It is a player only: it c
 
 ## Installing
 
-Run `SuperiorIPTVPlayer-Setup.exe`. It installs for the current user and needs no administrator password. The installer is not code-signed, so Windows SmartScreen may show "Windows protected your PC"; choose **More info**, then **Run anyway**.
+Run `SuperiorIPTVPlayer-Setup.exe` (from the repository's Releases page). It installs for the current user and needs no administrator password. The installer is not code-signed, so Windows SmartScreen may show "Windows protected your PC"; choose **More info**, then **Run anyway**.
 
 ## Building
 
-The build runs on GitHub (see `.github/workflows/windows.yml`). To build on a PC with the .NET 10 SDK and Inno Setup 6:
+The build runs on GitHub (see `.github/workflows/windows.yml`): unit tests, compile, installer, then a self-test on a Windows machine that drives the real app against a pretend TV provider. To build on a PC with the .NET 10 SDK and NSIS 3:
 
 ```
 dotnet test tests/Core.Tests/Core.Tests.csproj -c Release
 dotnet publish src/App/App.csproj -c Release -o publish
-iscc installer/setup.iss
+makensis installer/setup.nsi
 ```
 
 ## Layout
@@ -53,6 +53,6 @@ iscc installer/setup.iss
 | `src/App` | The Windows app (WinForms) and the VLC player |
 | `tests/Core.Tests` | Unit tests, including downloads and recordings whose connection is cut on purpose |
 | `samples` | Small test clips used by the app's self-test on the build server |
-| `installer` | Inno Setup script |
+| `installer` | NSIS installer script |
 
 Video playback uses libVLC (LGPL) through LibVLCSharp.

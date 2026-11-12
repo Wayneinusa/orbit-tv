@@ -75,7 +75,9 @@ public sealed class MainForm : Form
         Size = new Size(Math.Min(area.Width - Theme.S(60), Theme.S(1500)), Math.Min(area.Height - Theme.S(60), Theme.S(900)));
         try
         {
-            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            // The icon file is installed next to the program.
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "app.ico");
+            Icon = File.Exists(iconPath) ? new Icon(iconPath) : Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         }
         catch (Exception)
         {
