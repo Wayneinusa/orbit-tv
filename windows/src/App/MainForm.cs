@@ -9,6 +9,8 @@ namespace SuperiorIptv.Win;
 /// sits over the Live TV screen's preview area; in player mode it fills the window and the control bar,
 /// info banner and channel list are placed on top of it.
 ///
+/// The mouse pointer disappears after three seconds without movement while the video is being watched.
+///
 /// Keyboard in player mode: Up/Down change channel, Left opens the channel list (or skips back),
 /// Right skips forward, Enter shows the controls, Space pauses, ] and [ change speed, M mutes,
 /// F or F11 toggles full screen, Esc goes back.
@@ -39,6 +41,7 @@ public sealed class MainForm : Form
     private readonly PlayerBar bar;
     private readonly InfoBanner banner;
     private readonly ChannelPanel channelPanel;
+    private readonly StatsLabel statsLabel = new() { Visible = false };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 400 };
 
     private string currentKey = "";
@@ -52,6 +55,9 @@ public sealed class MainForm : Form
     private DateTime bannerUntil = DateTime.MinValue;
     private DateTime toastUntil = DateTime.MinValue;
     private Point lastCursor;
+    private Point pointerSeenAt;
+    private DateTime pointerMovedAt = DateTime.UtcNow;
+    private bool pointerHidden;
     private volatile bool libraryDirty = true;
     private string lastItemId = "";
     private int ticks;
@@ -59,6 +65,12 @@ public sealed class MainForm : Form
     public AppServices Services => app;
     public string CurrentKey => currentKey;
     public bool InPlayer => playerMode;
+    /// <summary>The screen with the given key, if it has been opened already (used by the self-test).</summary>
+    public PageBase PageFor(string key) => pages.TryGetValue(key, out PageBase page) ? page : null;
+    /// <summary>True while the mouse pointer is hidden because the video is being watched.</summary>
+    public bool PointerHidden => pointerHidden;
+    /// <summary>The statistics line as shown right now ("" when it is off or hidden).</summary>
+    public string StatsShown => statsLabel.Visible ? statsLabel.Current : "";
 
     public MainForm(AppServices app)
     {
@@ -104,7 +116,7 @@ public sealed class MainForm : Form
         rail.Paint += (_, e) =>
         {
             Theme.Prepare(e.Graphics);
-            Theme.DrawText(e.Graphics, DateTime.Now.ToString("HH:mm"), Theme.Ui(9.5f), Theme.Secondary,
+            Theme.DrawText(e.Graphics, TimeText.Time(DateTime.Now), Theme.Ui(9f), Theme.Secondary,
                 new Rectangle(0, rail.Height - Theme.S(34), rail.Width, Theme.S(24)), HorizontalAlignment.Center);
         };
 
@@ -130,6 +142,9 @@ public sealed class MainForm : Form
             Point p = Cursor.Position;
             if (p == lastCursor) return;
             lastCursor = p;
+            pointerSeenAt = p;
+            pointerMovedAt = DateTime.UtcNow;
+            SetPointerHidden(false);
             ShowControls();
         };
         video.MouseDown += (_, e) =>
@@ -148,9 +163,11 @@ public sealed class MainForm : Form
             if (playerMode) ToggleBorderless();
         };
 
-        Controls.AddRange(new Control[] { toast, channelPanel, banner, bar, status, rail, pageHost, video });
+        Controls.AddRange(new Control[] { toast, channelPanel, banner, bar, statsLabel, status, rail, pageHost, video });
+        Deactivate += (_, _) => SetPointerHidden(false);
 
         app.Preview = PreviewChannel;
+        app.OpenCategory = OpenCategory;
         app.Watch = WatchChannel;
         app.PlayItem = PlayItem;
         app.Toast = ShowToast;
@@ -190,10 +207,11 @@ public sealed class MainForm : Form
             channelPanel.BringToFront();
             banner.BringToFront();
             bar.BringToFront();
+            PlaceStats();
         }
         else
         {
-            bar.Visible = banner.Visible = channelPanel.Visible = false;
+            bar.Visible = banner.Visible = channelPanel.Visible = statsLabel.Visible = false;
             int railWidth = Theme.S(92);
             int statusHeight = status.Visible ? Theme.S(28) : 0;
             rail.SetBounds(0, 0, railWidth, height);
@@ -229,7 +247,73 @@ public sealed class MainForm : Form
         toast.BringToFront();
     }
 
+    /// <summary>Puts the statistics line in the bottom right corner of the picture, above the controls when they show.</summary>
+    private void PlaceStats()
+    {
+        bool show = playerMode && app.Settings.ShowStreamStats && app.Player.Item != null && statsLabel.Current.Length > 0;
+        if (!show)
+        {
+            if (statsLabel.Visible) statsLabel.Visible = false;
+            return;
+        }
+        int bottom = ClientSize.Height;
+        if (bar.Visible) bottom = bar.Top;
+        if (banner.Visible) bottom = Math.Min(bottom, banner.Top);
+        var target = new Point(ClientSize.Width - statsLabel.Width - Theme.S(8), bottom - statsLabel.Height - Theme.S(6));
+        if (statsLabel.Location != target) statsLabel.Location = target;
+        if (!statsLabel.Visible)
+        {
+            statsLabel.Visible = true;
+            statsLabel.BringToFront();
+        }
+    }
+
+    /// <summary>Turns the stream statistics line on or off (the Stats button in the player).</summary>
+    public void ToggleStats()
+    {
+        app.Settings.ShowStreamStats = !app.Settings.ShowStreamStats;
+        app.Settings.Save();
+        app.Player.CollectStats = app.Settings.ShowStreamStats;
+        if (!app.Settings.ShowStreamStats) statsLabel.SetText("");
+        PlaceStats();
+        ShowToast(app.Settings.ShowStreamStats ? "Stream statistics on (bottom right corner)" : "Stream statistics off");
+    }
+
+    // ---- Mouse pointer
+
+    private void SetPointerHidden(bool hide)
+    {
+        if (hide == pointerHidden) return;
+        pointerHidden = hide;
+        // Hide and Show are counted by Windows, so they must always be called in pairs.
+        if (hide) Cursor.Hide();
+        else Cursor.Show();
+    }
+
+    /// <summary>Hides the pointer once it has rested over the video for three seconds; any movement brings it back.</summary>
+    private void UpdatePointer()
+    {
+        Point position = Cursor.Position;
+        if (position != pointerSeenAt)
+        {
+            pointerSeenAt = position;
+            pointerMovedAt = DateTime.UtcNow;
+        }
+        bool overVideo = playerMode && ActiveForm == this && WindowState != FormWindowState.Minimized && Painters.OpenMenus == 0
+                         && video.RectangleToScreen(video.ClientRectangle).Contains(position)
+                         && !(bar.Visible && bar.RectangleToScreen(bar.ClientRectangle).Contains(position))
+                         && !(channelPanel.Visible && channelPanel.RectangleToScreen(channelPanel.ClientRectangle).Contains(position));
+        SetPointerHidden(overVideo && (DateTime.UtcNow - pointerMovedAt).TotalSeconds >= 3);
+    }
+
     // ---- Navigation
+
+    /// <summary>Opens Live TV on the category the channel belongs to and scrolls to the channel.</summary>
+    private void OpenCategory(Channel channel)
+    {
+        GoTo("live");
+        if (pages.TryGetValue("live", out PageBase page)) ((LivePage)page).Reveal(channel);
+    }
 
     public void GoTo(string key)
     {
@@ -317,6 +401,9 @@ public sealed class MainForm : Form
     {
         playerMode = true;
         channelPanel.Visible = false;
+        pointerMovedAt = DateTime.UtcNow;
+        app.Player.CollectStats = app.Settings.ShowStreamStats;
+        statsLabel.SetText("");
         bar.Rebuild();
         Arrange();
         ShowControls();
@@ -329,6 +416,8 @@ public sealed class MainForm : Form
         if (!playerMode) return;
         if (borderless) ToggleBorderless();
         playerMode = false;
+        SetPointerHidden(false);
+        app.Player.CollectStats = false;
         PlayableItem item = app.Player.Item;
         bool keepPreview = currentKey == "live" && item != null && item.IsLive;
         if (!keepPreview) app.Player.Stop();
@@ -427,7 +516,8 @@ public sealed class MainForm : Form
         var entries = new List<(string, Action)>
         {
             (borderless ? "Leave full screen" : "Full screen", ToggleBorderless),
-            ("Picture shape: " + app.Player.AspectLabel, () => app.Player.CycleAspect())
+            ("Picture shape: " + app.Player.AspectLabel, () => app.Player.CycleAspect()),
+            (app.Settings.ShowStreamStats ? "Hide stream statistics" : "Show stream statistics", ToggleStats)
         };
         if (app.Player.CanChangeSpeed) entries.Add(("Speed…", () => bar.SpeedMenu()));
         entries.Add(("-", null));
@@ -629,6 +719,8 @@ public sealed class MainForm : Form
             }
             if (bar.Visible) bar.Sync(false);
             if (banner.Visible) banner.Invalidate();
+            if (app.Settings.ShowStreamStats) statsLabel.SetText(player.StatsText);
+            PlaceStats();
 
             // A film or recording that reached its end returns to where the viewer came from.
             if (player.Item != null && !player.Item.IsLive && player.Status == PlayerStatus.Ended) ClosePlayer();
@@ -639,6 +731,7 @@ public sealed class MainForm : Form
             lastItemId = "";
         }
 
+        UpdatePointer();
         if (toast.Visible && DateTime.UtcNow > toastUntil) toast.Visible = false;
 
         // Rail badges
@@ -690,6 +783,7 @@ public sealed class MainForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         timer.Stop();
+        SetPointerHidden(false);
         SetThreadExecutionState(EsContinuous);
         base.OnFormClosed(e);
     }

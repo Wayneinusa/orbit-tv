@@ -206,7 +206,7 @@ public sealed class RecordingsPage : PageBase
         Rectangle r = Painters.RowBackground(g, bounds, state.Selected, state.Hover, Theme.Panel);
         (string glyph, Color color, string status) = item.Status switch
         {
-            RecordingStatus.Scheduled => (Theme.Glyph.Clock, Theme.Accent, "Scheduled for " + item.Start.ToLocalTime().ToString("ddd HH:mm")),
+            RecordingStatus.Scheduled => (Theme.Glyph.Clock, Theme.Accent, "Scheduled for " + TimeText.DayTime(item.Start.ToLocalTime()) + " to " + TimeText.Time(item.End.ToLocalTime())),
             RecordingStatus.Recording => (Theme.Glyph.Record, Theme.Live, "Recording until " + Theme.Time(item.End)),
             RecordingStatus.Converting => (Theme.Glyph.Refresh, Theme.Warn, item.ConvertProgress > 0 ? $"Converting to MP4 · {item.ConvertProgress:P0}" : "Waiting to convert to MP4"),
             RecordingStatus.Completed => (Theme.Glyph.Check, Theme.Good, item.HasMp4 ? "MP4" : "TS"),
@@ -215,7 +215,7 @@ public sealed class RecordingsPage : PageBase
         Theme.DrawGlyph(g, glyph, 15f, color, new Rectangle(r.X + Theme.S(6), r.Y, Theme.S(44), r.Height));
         int x = r.X + Theme.S(58), width = r.Width - Theme.S(110);
         Theme.DrawText(g, item.Title, Theme.Ui(10.5f, FontStyle.Bold), Theme.Text, new Rectangle(x, r.Y + Theme.S(6), width, Theme.S(22)));
-        Theme.DrawText(g, item.ChannelName + " · " + item.Start.ToLocalTime().ToString("g"), Theme.Ui(9f), Theme.Secondary, new Rectangle(x, r.Y + Theme.S(28), width, Theme.S(18)));
+        Theme.DrawText(g, item.ChannelName + " · " + TimeText.DateAndTime(item.Start.ToLocalTime()), Theme.Ui(9f), Theme.Secondary, new Rectangle(x, r.Y + Theme.S(28), width, Theme.S(18)));
 
         string line = status;
         if (item.Bytes > 0) line += " · " + Theme.Bytes(item.Bytes);

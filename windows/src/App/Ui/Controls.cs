@@ -40,6 +40,12 @@ public class VirtualList : Control
     public event Action<int> SelectionChanged;
     public event Action CheckedChanged;
 
+    /// <summary>Where the mouse was when the latest item was activated; (-1, -1) when the keyboard did it.</summary>
+    public Point LastClick { get; private set; } = new(-1, -1);
+
+    /// <summary>The rectangle an item currently occupies inside the list.</summary>
+    public Rectangle BoundsOf(int index) => ItemBounds(index);
+
     public VirtualList()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
@@ -215,6 +221,7 @@ public class VirtualList : Control
                 return;
             }
             Select(index);
+            LastClick = e.Location;
             Activated?.Invoke(index);
         }
         else if (e.Button == MouseButtons.Right)
@@ -277,6 +284,7 @@ public class VirtualList : Control
                     }
                     else
                     {
+                        LastClick = new Point(-1, -1);
                         Activated?.Invoke(selected);
                     }
                 }

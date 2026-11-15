@@ -7,7 +7,7 @@ public sealed class PlayerBar : Control
 {
     private readonly MainForm form;
     private readonly SeekBar seek = new();
-    private readonly FlatButton back, channels, previous, next, favorite, record, rewind, playPause, forward, forwardMinute, speed, download, audio, subtitles, aspect, mute, fullScreen;
+    private readonly FlatButton back, channels, previous, next, favorite, record, rewind, playPause, forward, forwardMinute, speed, download, audio, subtitles, stats, aspect, mute, fullScreen;
     private readonly FlatButton[] leftGroup, rightGroup;
     private bool showSeek;
 
@@ -48,12 +48,13 @@ public sealed class PlayerBar : Control
         download = Make("Download", Theme.Glyph.Download, DownloadCurrent);
         audio = Make("Audio", Theme.Glyph.Audio, () => TrackMenu(true), 10);
         subtitles = Make("Subtitles", Theme.Glyph.Subtitles, () => TrackMenu(false), 10);
+        stats = Make("Stats", Theme.Glyph.Info, () => form.ToggleStats());
         aspect = Make("Original", Theme.Glyph.Aspect, () => Player.CycleAspect());
         mute = Make("Sound", Theme.Glyph.Volume, () => Player.Muted = !Player.Muted);
         fullScreen = Make("Full screen", Theme.Glyph.FullScreen, () => form.ToggleBorderless());
 
         leftGroup = new[] { back, channels, previous, next, favorite, record, rewind, playPause, forward, forwardMinute, speed, download };
-        rightGroup = new[] { audio, subtitles, aspect, mute, fullScreen };
+        rightGroup = new[] { audio, subtitles, stats, aspect, mute, fullScreen };
     }
 
     private FlatButton Make(string text, string glyph, Action action, double keepSeconds = 4)
@@ -173,6 +174,7 @@ public sealed class PlayerBar : Control
             download.Selected = existing != null && existing.State != DownloadState.Completed;
         }
         aspect.Caption = Player.AspectLabel;
+        stats.Selected = App.Settings.ShowStreamStats;
         mute.Caption = Player.Muted ? "Muted" : "Sound";
         mute.Glyph = Player.Muted ? Theme.Glyph.Mute : Theme.Glyph.Volume;
         if (showSeek) Invalidate(new Rectangle(0, 0, Width, Theme.S(40)));
@@ -258,8 +260,10 @@ public sealed class InfoBanner : Control
 
         // Clock and state on the right
         int right = Width - pad;
-        Theme.DrawText(g, DateTime.Now.ToString("HH:mm"), Theme.Ui(15f), Theme.Text, new Rectangle(right - Theme.S(90), 0, Theme.S(90), Height), HorizontalAlignment.Right);
-        right -= Theme.S(100);
+        string clock = TimeText.Time(DateTime.Now);
+        int clockWidth = Theme.MeasureWidth(g, clock, Theme.Ui(15f)) + Theme.S(6);
+        Theme.DrawText(g, clock, Theme.Ui(15f), Theme.Text, new Rectangle(right - clockWidth, 0, clockWidth, Height), HorizontalAlignment.Right);
+        right -= clockWidth + Theme.S(12);
         string state = player.Status switch
         {
             PlayerStatus.Loading => player.Reconnects > 0 ? "Reconnecting…" : "Loading…",
@@ -295,10 +299,13 @@ public sealed class InfoBanner : Control
             }
             Theme.DrawText(g, channel.Name, Theme.Ui(9.5f), Theme.Secondary, new Rectangle(x, Theme.S(8), width, Theme.S(20)));
             Theme.DrawText(g, current.Title, Theme.Ui(12.5f, FontStyle.Bold), Theme.Text, new Rectangle(x, Theme.S(27), width, Theme.S(26)));
-            int barWidth = Math.Min(width - Theme.S(110), Theme.S(420));
-            Theme.DrawText(g, Theme.Time(current.Start), Theme.Ui(8.5f), Theme.Secondary, new Rectangle(x, Theme.S(54), Theme.S(44), Theme.S(18)));
-            Theme.DrawProgress(g, new Rectangle(x + Theme.S(48), Theme.S(61), Math.Max(10, barWidth), Theme.S(4)), current.Progress(now), Theme.Accent);
-            Theme.DrawText(g, Theme.Time(current.Stop), Theme.Ui(8.5f), Theme.Secondary, new Rectangle(x + Theme.S(56) + Math.Max(10, barWidth), Theme.S(54), Theme.S(50), Theme.S(18)));
+            string from = Theme.Time(current.Start), until = Theme.Time(current.Stop);
+            int fromWidth = Theme.MeasureWidth(g, from, Theme.Ui(8.5f)) + Theme.S(6);
+            int untilWidth = Theme.MeasureWidth(g, until, Theme.Ui(8.5f)) + Theme.S(6);
+            int barWidth = Math.Max(10, Math.Min(width - fromWidth - untilWidth - Theme.S(16), Theme.S(420)));
+            Theme.DrawText(g, from, Theme.Ui(8.5f), Theme.Secondary, new Rectangle(x, Theme.S(54), fromWidth, Theme.S(18)));
+            Theme.DrawProgress(g, new Rectangle(x + fromWidth + Theme.S(4), Theme.S(61), barWidth, Theme.S(4)), current.Progress(now), Theme.Accent);
+            Theme.DrawText(g, until, Theme.Ui(8.5f), Theme.Secondary, new Rectangle(x + fromWidth + Theme.S(12) + barWidth, Theme.S(54), untilWidth, Theme.S(18)));
             Programme next = app.Library.Epg.Next(channel, now);
             if (next != null)
             {
@@ -394,5 +401,51 @@ public sealed class ChannelPanel : Control
         e.Graphics.Clear(Theme.Background);
         Theme.DrawText(e.Graphics, App.SelectedGroup, Theme.Ui(11.5f, FontStyle.Bold), Theme.Text,
             new Rectangle(Theme.S(58), 0, Math.Max(10, Width - Theme.S(116)), Theme.S(56)), HorizontalAlignment.Center);
+    }
+}
+
+/// <summary>
+/// The stream statistics line: resolution, frame rate, bitrate and codec in small, dim text in the
+/// bottom right corner of the picture. It is meant to be there when looked for and otherwise unnoticed.
+/// </summary>
+public sealed class StatsLabel : Control
+{
+    private string text = "";
+
+    public StatsLabel()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.Selectable, false);
+        BackColor = Color.Black;
+        Enabled = false;    // clicks go to the video behind it
+    }
+
+    private static Font Small => Theme.Ui(7.5f);
+
+    /// <summary>Sets the text and resizes the label to fit it. Returns true when the size changed.</summary>
+    public bool SetText(string value)
+    {
+        value ??= "";
+        if (value == text) return false;
+        text = value;
+        Size wanted;
+        using (Graphics g = CreateGraphics())
+        {
+            wanted = new Size(Theme.MeasureWidth(g, text, Small) + Theme.S(10), Theme.S(18));
+        }
+        bool resized = wanted != Size;
+        if (resized) Size = wanted;
+        Invalidate();
+        return resized;
+    }
+
+    public string Current => text;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        Theme.Prepare(g);
+        g.Clear(Color.Black);
+        Theme.DrawText(g, text, Small, Color.FromArgb(128, 134, 146), new Rectangle(Theme.S(5), 0, Width - Theme.S(6), Height));
     }
 }

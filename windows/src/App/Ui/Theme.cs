@@ -90,6 +90,7 @@ public static class Theme
         public const string Catchup = "\uE81C";
         public const string More = "\uE712";
         public const string Select = "\uE762";
+        public const string Info = "\uE946";
     }
 
     public static void Prepare(Graphics g)
@@ -242,7 +243,8 @@ public static class Theme
         return hours > 0 ? $"{hours}:{minutes:00}:{seconds:00}" : $"{minutes}:{seconds:00}";
     }
 
-    public static string Time(DateTime utc) => utc.ToLocalTime().ToString("HH:mm");
+    /// <summary>A UTC time as local clock time, for example 4:36 PM.</summary>
+    public static string Time(DateTime utc) => TimeText.Time(utc.ToLocalTime());
 
     public static string Range(Programme programme) => Time(programme.Start) + " – " + Time(programme.Stop);
 

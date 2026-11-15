@@ -18,10 +18,13 @@ public sealed class AppServices : IDisposable
     public Action<PlayableItem> PlayItem = _ => { };
     public Action<string> Toast = _ => { };
     public Action<string> GoTo = _ => { };
+    /// <summary>Opens Live TV on the category a channel belongs to, with that channel highlighted.</summary>
+    public Action<Channel> OpenCategory = _ => { };
 
     public AppServices()
     {
         Settings = Settings.Load();
+        TimeText.TwentyFourHour = Settings.TwentyFourHourClock;
         Library = new Library(Settings);
         Resume = new ResumeStore();
         Player = new PlayerEngine(Settings, Resume);
@@ -93,7 +96,7 @@ public sealed class AppServices : IDisposable
             Id = recording.Id,
             Kind = PlayKind.Recording,
             Title = recording.Title,
-            Subtitle = recording.ChannelName + " · " + recording.Start.ToLocalTime().ToString("g"),
+            Subtitle = recording.ChannelName + " · " + TimeText.DateAndTime(recording.Start.ToLocalTime()),
             Url = path,
             ResumeKey = "rec:" + recording.Id
         });
@@ -127,6 +130,14 @@ public sealed class AppServices : IDisposable
     {
         Recordings.RecordNow(channel, title, endUtc, Library.UserAgentFor(channel.PlaylistId, channel));
         Toast($"Recording {channel.Name} until {Theme.Time(endUtc)}");
+    }
+
+    /// <summary>Records between two chosen times; a start time in the future becomes a booking.</summary>
+    public void RecordBetween(Channel channel, string title, DateTime startUtc, DateTime endUtc)
+    {
+        Recordings.RecordBetween(channel, title, startUtc, endUtc, Library.UserAgentFor(channel.PlaylistId, channel));
+        if (startUtc <= DateTime.UtcNow.AddSeconds(5)) Toast($"Recording {channel.Name} until {Theme.Time(endUtc)}");
+        else Toast($"Recording scheduled: {channel.Name}, {TimeText.DayTime(startUtc.ToLocalTime())} to {Theme.Time(endUtc)}");
     }
 
     public void Dispose()

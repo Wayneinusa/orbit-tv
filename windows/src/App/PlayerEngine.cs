@@ -71,6 +71,15 @@ public sealed class PlayerEngine : IDisposable
     public int CurrentAudio { get; private set; } = -1;
     public int CurrentSubtitle { get; private set; } = -1;
 
+    /// <summary>Turn on to have <see cref="StatsText"/> kept up to date (costs a little work twice a second).</summary>
+    public bool CollectStats;
+    /// <summary>One line about the stream being played, for example "1920×1080 · 29.97 fps · 4.8 Mbps · H264".</summary>
+    public string StatsText { get; private set; } = "";
+    public int VideoWidth { get; private set; }
+    public int VideoHeight { get; private set; }
+    /// <summary>Current bitrate of the stream in kilobits per second (smoothed), 0 when not known yet.</summary>
+    public double BitrateKbps { get; private set; }
+
     public PlayerEngine(Settings settings, ResumeStore resume)
     {
         this.settings = settings;
@@ -185,6 +194,9 @@ public sealed class PlayerEngine : IDisposable
         startedAt = DateTime.UtcNow;
         AudioTracks = new List<TrackOption>();
         SubtitleTracks = new List<TrackOption>();
+        StatsText = "";
+        VideoWidth = VideoHeight = 0;
+        BitrateKbps = 0;
         int buffer = Math.Max(300, settings?.BufferMs ?? 1500);
         bool mute = muted;
         int level = volume;
@@ -344,6 +356,72 @@ public sealed class PlayerEngine : IDisposable
         }
     }
 
+    /// <summary>Reads the picture size, frame rate, codec and bitrate of what is playing.</summary>
+    private void ReadStats()
+    {
+        try
+        {
+            uint width = 0, height = 0;
+            player.Size(0, ref width, ref height);
+            double fps = 0;
+            string codec = "";
+            double kbps = 0;
+            using (Vlc.Media media = player.Media)
+            {
+                if (media != null)
+                {
+                    foreach (Vlc.MediaTrack track in media.Tracks)
+                    {
+                        if (track.TrackType != Vlc.TrackType.Video) continue;
+                        if (width == 0 || height == 0)
+                        {
+                            width = track.Data.Video.Width;
+                            height = track.Data.Video.Height;
+                        }
+                        if (track.Data.Video.FrameRateDen > 0) fps = (double)track.Data.Video.FrameRateNum / track.Data.Video.FrameRateDen;
+                        codec = FourCc(track.Codec);
+                        break;
+                    }
+                    // VLC reports bitrates in bytes per microsecond; 8000 turns that into kilobits per second.
+                    Vlc.MediaStats stats = media.Statistics;
+                    double measured = stats.DemuxBitrate > 0 ? stats.DemuxBitrate : stats.InputBitrate;
+                    kbps = measured * 8000;
+                }
+            }
+            if (kbps > 0) BitrateKbps = BitrateKbps <= 0 ? kbps : BitrateKbps * 0.7 + kbps * 0.3;
+            VideoWidth = (int)width;
+            VideoHeight = (int)height;
+
+            var parts = new List<string>();
+            if (width > 0 && height > 0) parts.Add($"{width}×{height}");
+            if (fps > 1 && fps < 400) parts.Add(fps.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " fps");
+            if (BitrateKbps > 0)
+            {
+                parts.Add(BitrateKbps >= 1000
+                    ? (BitrateKbps / 1000).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " Mbps"
+                    : BitrateKbps.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " kbps");
+            }
+            if (codec.Length > 0) parts.Add(codec);
+            StatsText = string.Join(" · ", parts);
+        }
+        catch (Exception)
+        {
+            // Statistics are optional; never let them disturb playback.
+        }
+    }
+
+    /// <summary>VLC names codecs with four packed characters, for example "h264".</summary>
+    private static string FourCc(uint code)
+    {
+        var text = new System.Text.StringBuilder(4);
+        for (int i = 0; i < 4; i++)
+        {
+            char c = (char)((code >> (8 * i)) & 0xFF);
+            if (c > 32 && c < 127) text.Append(c);
+        }
+        return text.ToString().ToUpperInvariant();
+    }
+
     // ---- Polling (called about twice a second from the window's timer)
 
     public void Poll()
@@ -393,6 +471,7 @@ public sealed class PlayerEngine : IDisposable
         }
 
         if (status == PlayerStatus.Playing && ticks % 4 == 0) ReadTracks();
+        if (CollectStats && (status == PlayerStatus.Playing || status == PlayerStatus.Paused) && ticks % 2 == 0) ReadStats();
         if (status == PlayerStatus.Playing && ticks % 20 == 0) SaveResumePoint();
         if (status == PlayerStatus.Ended && !item.IsLive && !string.IsNullOrEmpty(item.ResumeKey)) resume?.Set(item.ResumeKey, 0);
 

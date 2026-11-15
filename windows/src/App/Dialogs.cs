@@ -164,6 +164,7 @@ public sealed class PlaylistDialog : DarkForm
     private readonly TextBox password = Theme.Style(new TextBox { UseSystemPasswordChar = true });
     private readonly TextBox address = Theme.Style(new TextBox());
     private readonly TextBox epg = Theme.Style(new TextBox());
+    private readonly TextBox epg2 = Theme.Style(new TextBox());
     private readonly TextBox userAgent = Theme.Style(new TextBox());
     private readonly Label status = Theme.Caption("");
     private readonly FlatButton save, browse;
@@ -186,7 +187,8 @@ public sealed class PlaylistDialog : DarkForm
         AddField("Username", username, 1);
         AddField("Password", password, 1);
         AddField("M3U web address, or the path of an .m3u file on this PC", address, 2);
-        AddField("Guide (XMLTV) address, optional. Leave empty to use the playlist's own", epg, 0);
+        AddField("Primary guide (XMLTV) address, optional. Leave empty to use the playlist's own", epg, 0);
+        AddField("Additional guide (XMLTV) address, optional. Used for channels the primary guide has no schedule for", epg2, 0);
         AddField("User-Agent, optional. Leave empty unless your provider requires one", userAgent, 0);
 
         browse = new FlatButton("Browse…", Theme.Glyph.Folder, (_, _) => BrowseFile());
@@ -202,6 +204,7 @@ public sealed class PlaylistDialog : DarkForm
         {
             name.Text = existing.Name;
             epg.Text = existing.EpgUrl;
+            epg2.Text = existing.EpgUrl2;
             userAgent.Text = existing.UserAgent;
             kind.SelectedIndex = existing.Kind == PlaylistKind.Xtream ? 0 : 1;
             server.Text = existing.Server;
@@ -222,7 +225,7 @@ public sealed class PlaylistDialog : DarkForm
 
     private void Arrange()
     {
-        int pad = Theme.S(20), width = Theme.S(520), y = pad;
+        int pad = Theme.S(20), width = Theme.S(620), y = pad;
         int active = kind.SelectedIndex == 0 ? 1 : 2;
         foreach (var (label, field, group) in fields)
         {
@@ -285,6 +288,7 @@ public sealed class PlaylistDialog : DarkForm
         playlist.Password = password.Text.Trim();
         playlist.Url = address.Text.Trim();
         playlist.EpgUrl = epg.Text.Trim();
+        playlist.EpgUrl2 = epg2.Text.Trim();
         playlist.UserAgent = userAgent.Text.Trim();
 
         save.Enabled = false;
@@ -529,5 +533,208 @@ public sealed class SeriesDialog : DarkForm
         foreach (Episode episode in items.OrderBy(e => e.Number)) app.Download(episode, show);
         app.Toast(items.Count == 1 ? "Added 1 episode to Downloads" : $"Added {items.Count} episodes to Downloads");
         list.Invalidate();
+    }
+}
+
+/// <summary>"Custom time" recording: the viewer picks when recording starts and when it ends.</summary>
+public sealed class RecordTimeDialog : DarkForm
+{
+    /// <summary>One line of pickers: day, hour, minute and (in 12-hour mode) AM/PM.</summary>
+    private sealed class TimeRow
+    {
+        public readonly ComboBox Day = Theme.Style(new ComboBox());
+        public readonly ComboBox Hour = Theme.Style(new ComboBox());
+        public readonly ComboBox Minute = Theme.Style(new ComboBox());
+        public readonly ComboBox Half = Theme.Style(new ComboBox());
+        private readonly DateTime today = DateTime.Today;
+        private bool loading;
+        public event Action Changed;
+
+        public TimeRow()
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                DateTime day = today.AddDays(i);
+                Day.Items.Add(i == 0 ? "Today" : i == 1 ? "Tomorrow" : TimeText.ShortDate(day));
+            }
+            if (TimeText.TwentyFourHour)
+            {
+                for (int hour = 0; hour < 24; hour++) Hour.Items.Add(hour.ToString("00"));
+            }
+            else
+            {
+                for (int hour = 1; hour <= 12; hour++) Hour.Items.Add(hour.ToString());
+                Half.Items.AddRange(new object[] { "AM", "PM" });
+            }
+            for (int minute = 0; minute < 60; minute++) Minute.Items.Add(minute.ToString("00"));
+            Hour.MaxDropDownItems = 12;
+            Minute.MaxDropDownItems = 12;
+            foreach (ComboBox combo in new[] { Day, Hour, Minute, Half })
+            {
+                combo.SelectedIndexChanged += (_, _) =>
+                {
+                    if (!loading) Changed?.Invoke();
+                };
+            }
+        }
+
+        public IEnumerable<Control> Controls => TimeText.TwentyFourHour ? new Control[] { Day, Hour, Minute } : new Control[] { Day, Hour, Minute, Half };
+
+        public void Place(int x, int y)
+        {
+            Day.SetBounds(x, y, Theme.S(170), Theme.S(28));
+            Hour.SetBounds(x + Theme.S(180), y, Theme.S(64), Theme.S(28));
+            Minute.SetBounds(x + Theme.S(252), y, Theme.S(64), Theme.S(28));
+            Half.SetBounds(x + Theme.S(324), y, Theme.S(70), Theme.S(28));
+        }
+
+        /// <summary>The chosen local date and time.</summary>
+        public DateTime Value
+        {
+            get
+            {
+                int hour;
+                if (TimeText.TwentyFourHour)
+                {
+                    hour = Math.Max(0, Hour.SelectedIndex);
+                }
+                else
+                {
+                    int twelve = Math.Max(0, Hour.SelectedIndex) + 1;                 // 1..12
+                    hour = twelve % 12 + (Half.SelectedIndex == 1 ? 12 : 0);          // 12 AM is 0, 12 PM is 12
+                }
+                return today.AddDays(Math.Max(0, Day.SelectedIndex)).AddHours(hour).AddMinutes(Math.Max(0, Minute.SelectedIndex));
+            }
+            set
+            {
+                loading = true;
+                Day.SelectedIndex = Math.Clamp((value.Date - today).Days, 0, Day.Items.Count - 1);
+                if (TimeText.TwentyFourHour)
+                {
+                    Hour.SelectedIndex = value.Hour;
+                }
+                else
+                {
+                    Hour.SelectedIndex = (value.Hour + 11) % 12;                      // 0 -> "12", 13 -> "1"
+                    Half.SelectedIndex = value.Hour >= 12 ? 1 : 0;
+                }
+                Minute.SelectedIndex = value.Minute;
+                loading = false;
+            }
+        }
+    }
+
+    private readonly AppServices app;
+    private readonly Channel channel;
+    private readonly TextBox name = Theme.Style(new TextBox());
+    private readonly TimeRow start = new(), end = new();
+    private readonly Label summary = Theme.Caption("");
+    private readonly FlatButton record;
+
+    /// <summary>The start and end that were chosen, in local time (used by the self-test).</summary>
+    public DateTime StartValue { get => start.Value; set => start.Value = value; }
+    public DateTime EndValue { get => end.Value; set => end.Value = value; }
+
+    public RecordTimeDialog(AppServices app, Channel channel, Programme current)
+    {
+        this.app = app;
+        this.channel = channel;
+        Text = "Record at a custom time";
+        int pad = Theme.S(20), width = Theme.S(480), y = pad;
+
+        var title = new Label { Text = "Record " + channel.Name, Font = Theme.Ui(15f, FontStyle.Bold), ForeColor = Theme.Text, AutoSize = false, AutoEllipsis = true };
+        title.SetBounds(pad, y, width, Theme.S(32));
+        y += Theme.S(44);
+
+        Label nameLabel = Theme.Caption("Name of the recording");
+        nameLabel.Location = new Point(pad, y);
+        y += Theme.S(22);
+        name.Text = current?.Title ?? channel.Name;
+        name.SetBounds(pad, y, width, Theme.S(28));
+        y += Theme.S(42);
+
+        Label startLabel = Theme.Caption("Start");
+        startLabel.Location = new Point(pad, y + Theme.S(5));
+        start.Place(pad + Theme.S(70), y);
+        y += Theme.S(42);
+        Label endLabel = Theme.Caption("End");
+        endLabel.Location = new Point(pad, y + Theme.S(5));
+        end.Place(pad + Theme.S(70), y);
+        y += Theme.S(44);
+
+        summary.AutoSize = false;
+        summary.SetBounds(pad, y, width, Theme.S(44));
+        y += Theme.S(52);
+
+        record = new FlatButton("Record", Theme.Glyph.Record, (_, _) => Confirm()) { Fill = Theme.Accent };
+        record.SetBounds(pad, y, Theme.S(170), Theme.S(40));
+        var cancel = new FlatButton("Cancel", "", (_, _) => Close());
+        cancel.SetBounds(pad + Theme.S(178), y, Theme.S(110), Theme.S(40));
+        ClientSize = new Size(width + pad * 2, y + Theme.S(40) + pad);
+
+        Controls.AddRange(new Control[] { title, nameLabel, name, startLabel, endLabel, summary, record, cancel });
+        Controls.AddRange(start.Controls.ToArray());
+        Controls.AddRange(end.Controls.ToArray());
+
+        DateTime now = DateTime.Now;
+        DateTime begin = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
+        DateTime until = current != null && current.Stop.ToLocalTime() > begin.AddMinutes(5)
+            ? current.Stop.ToLocalTime()
+            : begin.AddMinutes(60 + (5 - begin.Minute % 5) % 5);
+        start.Value = begin;
+        end.Value = new DateTime(until.Year, until.Month, until.Day, until.Hour, until.Minute, 0);
+        start.Changed += Describe;
+        end.Changed += Describe;
+        Describe();
+    }
+
+    /// <summary>Explains what the chosen times mean, or why they cannot be used. Returns true when they are usable.</summary>
+    private bool Check(out string text)
+    {
+        DateTime begin = start.Value, until = end.Value, now = DateTime.Now;
+        if (until <= begin)
+        {
+            text = "The end time must be later than the start time.";
+            return false;
+        }
+        if (until <= now.AddSeconds(30))
+        {
+            text = "The end time has already passed.";
+            return false;
+        }
+        TimeSpan length = until - (begin < now ? now : begin);
+        if (length > TimeSpan.FromHours(24))
+        {
+            text = "A recording can be at most 24 hours long.";
+            return false;
+        }
+        string duration = length.TotalMinutes < 60 ? $"{Math.Ceiling(length.TotalMinutes):0} min" : $"{(int)length.TotalHours} h {length.Minutes:00} min";
+        text = begin <= now.AddSeconds(30)
+            ? $"Starts right away and records for {duration}, until {TimeText.Time(until)}."
+            : $"Starts {TimeText.DayTime(begin)} and records for {duration}. Keep Superior IPTV Player running at that time (it can be minimised).";
+        return true;
+    }
+
+    private void Describe()
+    {
+        bool usable = Check(out string text);
+        summary.ForeColor = usable ? Theme.Secondary : Theme.Warn;
+        summary.Text = text;
+        record.Enabled = usable;
+    }
+
+    /// <summary>Books the recording with the chosen times. Returns false when the times cannot be used.</summary>
+    public bool Confirm()
+    {
+        if (!Check(out _))
+        {
+            Describe();
+            return false;
+        }
+        string title = name.Text.Trim().Length > 0 ? name.Text.Trim() : channel.Name;
+        app.RecordBetween(channel, title, start.Value.ToUniversalTime(), end.Value.ToUniversalTime());
+        DialogResult = DialogResult.OK;
+        Close();
+        return true;
     }
 }

@@ -117,7 +117,7 @@ public static class Painters
     }
 
     /// <summary>A plain two-line row with an icon (search results, episodes, settings lists).</summary>
-    public static void TwoLineRow(Graphics g, Rectangle bounds, ItemState state, string glyph, Color glyphColor, string title, string detail, bool checkMode = false)
+    public static void TwoLineRow(Graphics g, Rectangle bounds, ItemState state, string glyph, Color glyphColor, string title, string detail, bool checkMode = false, int textRight = 0)
     {
         Rectangle r = RowBackground(g, bounds, state.Selected || state.Checked, state.Hover, Theme.Panel);
         int x = r.X + Theme.S(8);
@@ -134,7 +134,7 @@ public static class Painters
             Theme.DrawGlyph(g, glyph, 12f, glyphColor, new Rectangle(x, r.Y, Theme.S(30), r.Height));
             x += Theme.S(38);
         }
-        int width = Math.Max(10, r.Right - x - Theme.S(8));
+        int width = Math.Max(10, (textRight > 0 ? Math.Min(r.Right, bounds.X + textRight) : r.Right) - x - Theme.S(8));
         if (string.IsNullOrEmpty(detail))
         {
             Theme.DrawText(g, title, Theme.Ui(10f, FontStyle.Bold), Theme.Text, new Rectangle(x, r.Y, width, r.Height));
@@ -151,6 +151,9 @@ public static class Painters
         Theme.DrawText(g, title.ToUpperInvariant(), Theme.Ui(8.5f, FontStyle.Bold), Theme.Faint,
             new Rectangle(bounds.X + Theme.S(14), bounds.Y + Theme.S(8), bounds.Width - Theme.S(28), bounds.Height - Theme.S(8)));
     }
+
+    /// <summary>How many context menus are open right now (the player keeps the mouse pointer visible meanwhile).</summary>
+    public static int OpenMenus { get; private set; }
 
     /// <summary>Shows a dark context menu at a screen position.</summary>
     public static void ShowMenu(Control owner, Point screen, params (string Text, Action Run)[] entries)
@@ -175,7 +178,12 @@ public static class Painters
             else entry.Click += (_, _) => run();
             menu.Items.Add(entry);
         }
-        menu.Closed += (_, _) => owner.BeginInvoke(new Action(menu.Dispose));
+        menu.Closed += (_, _) =>
+        {
+            OpenMenus = Math.Max(0, OpenMenus - 1);
+            owner.BeginInvoke(new Action(menu.Dispose));
+        };
+        OpenMenus++;
         menu.Show(screen);
     }
 

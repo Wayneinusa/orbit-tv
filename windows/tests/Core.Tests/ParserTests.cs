@@ -105,6 +105,77 @@ public class ParserTests
         Assert.Equal(2, data.Between(news, noon, noon.AddHours(2)).Count);
     }
 
+    private static EpgData Listings(string channelId, params string[] titles)
+    {
+        var data = new EpgData();
+        var list = new List<Programme>();
+        DateTime at = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
+        foreach (string title in titles)
+        {
+            list.Add(new Programme { Start = at, Stop = at.AddHours(1), Title = title });
+            at = at.AddHours(1);
+        }
+        data.Programmes[channelId] = list;
+        return data;
+    }
+
+    [Fact]
+    public void AdditionalGuideFillsInAndCanBeChosenPerChannel()
+    {
+        DateTime noon = new DateTime(2026, 3, 1, 12, 30, 0, DateTimeKind.Utc);
+        var sources = new Dictionary<string, EpgData>
+        {
+            ["http://primary"] = Listings("one", "Primary show"),
+            ["http://extra"] = new EpgData()
+        };
+        sources["http://extra"].Programmes["one"] = Listings("one", "Extra show").Programmes["one"];
+        sources["http://extra"].Programmes["two"] = Listings("two", "Only in extra").Programmes["two"];
+        var playlists = new Dictionary<string, PlaylistGuide>
+        {
+            ["p"] = new PlaylistGuide { Primary = { "http://primary" }, Additional = { "http://extra" } }
+        };
+        var one = new Channel { Id = "c1", PlaylistId = "p", Name = "One", EpgId = "one" };
+        var two = new Channel { Id = "c2", PlaylistId = "p", Name = "Two", EpgId = "two" };
+        var three = new Channel { Id = "c3", PlaylistId = "p", Name = "Three", EpgId = "three" };
+        var stranger = new Channel { Id = "c4", PlaylistId = "other", Name = "Stranger", EpgId = "one" };
+
+        var book = new GuideBook(sources, playlists, new Dictionary<string, GuideChoice>(), null);
+        Assert.True(book.HasListings);
+        Assert.Equal("Primary show", book.Current(one, noon).Title);      // the primary guide wins when it has listings
+        Assert.False(book.UsesAdditional(one));
+        Assert.Equal("Only in extra", book.Current(two, noon).Title);     // the additional guide fills the gap
+        Assert.True(book.UsesAdditional(two));
+        Assert.Null(book.Current(three, noon));                           // neither has it
+        Assert.Null(book.Current(stranger, noon));                        // a channel of a playlist without guides
+        Assert.True(book.HasAdditional(one));
+        Assert.Equal(GuideChoice.Automatic, book.ChoiceFor(one));
+
+        var choices = new Dictionary<string, GuideChoice> { ["c1"] = GuideChoice.Additional, ["c2"] = GuideChoice.Primary };
+        book = new GuideBook(sources, playlists, choices, null);
+        Assert.Equal("Extra show", book.Current(one, noon).Title);        // chosen for this channel
+        Assert.Null(book.Current(two, noon));                             // primary only, and the primary has nothing
+        Assert.Single(book.Between(one, noon, noon.AddMinutes(10)));
+
+        choices = new Dictionary<string, GuideChoice> { ["c1"] = GuideChoice.None };
+        book = new GuideBook(sources, playlists, choices, null);
+        Assert.Empty(book.ListFor(one));
+    }
+
+    [Fact]
+    public void TimesAreWrittenInTwelveHourFormat()
+    {
+        var afternoon = new DateTime(2026, 11, 14, 16, 36, 0);
+        var morning = new DateTime(2026, 11, 14, 0, 5, 0);
+        TimeText.TwentyFourHour = false;
+        Assert.Equal("4:36 PM", TimeText.Time(afternoon));
+        Assert.Equal("12:05 AM", TimeText.Time(morning));
+        Assert.Equal("Sat 4:36 PM", TimeText.DayTime(afternoon));
+        Assert.Equal("Sat, Nov 14, 4:36 PM", TimeText.DateAndTime(afternoon));
+        TimeText.TwentyFourHour = true;
+        Assert.Equal("16:36", TimeText.Time(afternoon));
+        TimeText.TwentyFourHour = false;
+    }
+
     [Fact]
     public void CatchupAddresses()
     {

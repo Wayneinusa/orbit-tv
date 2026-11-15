@@ -183,6 +183,33 @@ public sealed class RecordingManager : IDisposable
         SafeTick();
     }
 
+    /// <summary>
+    /// Records between two times chosen by the viewer, exactly as given (no padding is added).
+    /// A start time that has already passed starts recording right away.
+    /// </summary>
+    public void RecordBetween(Channel channel, string title, DateTime startUtc, DateTime endUtc, string userAgent)
+    {
+        DateTime now = DateTime.UtcNow;
+        DateTime start = startUtc < now ? now : startUtc;
+        DateTime end = endUtc < start.AddMinutes(1) ? start.AddMinutes(1) : endUtc;
+        lock (gate)
+        {
+            recordings.Insert(0, new Recording
+            {
+                ChannelId = channel.Id,
+                ChannelName = channel.Name,
+                Title = title,
+                Url = channel.Url,
+                UserAgent = userAgent ?? "",
+                Start = start,
+                End = end,
+                BasePath = NewBasePath(title, channel.Name, start)
+            });
+            Save();
+        }
+        SafeTick();
+    }
+
     // ---- Controlling recordings
 
     /// <summary>Stops a running recording (keeping what was captured) or cancels a booking.</summary>

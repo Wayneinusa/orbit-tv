@@ -7,15 +7,17 @@ An IPTV player for Windows 10 and Windows 11 (64-bit). It is a player only: it c
 | Area | What it does |
 | --- | --- |
 | Playlists | Xtream Codes login, M3U web address or an .m3u file on the PC; several playlists; automatic reload |
-| Live TV | Groups, channel list with current programme, preview pane, favourites, recent channels, hidden groups |
-| Player | VLC engine, automatic reconnect when a channel freezes, audio and subtitle tracks, picture shape, channel list overlay |
+| Live TV | Groups on the left; preview with programme details on top; below it the channels with their programme timeline, so the guide is on the same screen. Favourites, recent channels, hidden groups |
+| Player | VLC engine, automatic reconnect when a channel freezes, audio and subtitle tracks, picture shape, channel list overlay. The mouse pointer hides after three seconds. A Stats button shows resolution, frame rate, bitrate and codec in small print in the bottom right corner |
 | Playback speed | 0.5× to 16× (including 2×, 4×, 8×, 10×) for movies, episodes, catch-up, recordings and downloaded files |
-| TV guide | XMLTV (plain or gzip), timeline grid, programme details, search |
+| TV guide | XMLTV (plain or gzip), timeline grid, programme details, search. Each playlist has a primary guide and an optional additional guide; the additional one is used for channels the primary has no schedule for. Right-click a channel and choose Guide source to pick the source for that one channel |
 | Catch-up | Xtream timeshift, shift, append, template and Flussonic styles |
 | Movies and series | Categories, posters, details, resume where you stopped |
 | Downloads | Download a movie or episode from its details, from the player while watching, or tick several and download them together. A Downloads screen shows progress with pause, resume and stop. Interrupted downloads resume by themselves, also after the app is restarted. |
-| Recording | Record now, record a programme, schedule from the guide. Reconnects by itself whenever the stream stops. Converted to MP4 automatically or on demand. Any folder, including a network drive. |
+| Recording | Record now, record a programme, schedule from the guide, or choose your own start and end time (Custom time). Reconnects by itself whenever the stream stops. Converted to MP4 automatically or on demand. Any folder, including a network drive. |
 | Multi-view | Two or four channels at once |
+| Search | Channels, movies, series and the guide in one box. A channel result has an Open category button that shows its category in Live TV |
+| Clock | Times are shown in 12-hour format (4:36 PM); 24-hour can be chosen in Settings |
 
 ## Keyboard in the player
 

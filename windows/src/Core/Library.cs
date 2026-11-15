@@ -11,6 +11,9 @@ public sealed class Library
     private Dictionary<string, List<Channel>> byGroup = new();
     private Dictionary<string, Channel> byId = new();
     private HashSet<string> favoriteSet = new();
+    private Dictionary<string, EpgData> guideData = new();
+    private Dictionary<string, GuideChoice> guideChoices = new();
+    private DateTime? guideUpdated;
 
     public Settings Settings { get; }
     public List<Playlist> Playlists { get; private set; } = new();
@@ -23,7 +26,8 @@ public sealed class Library
     public List<string> Favorites { get; private set; } = new();
     public List<string> Recents { get; private set; } = new();
 
-    public EpgData Epg { get; private set; } = new();
+    /// <summary>The guide. Replaced by a new instance whenever listings, playlists or per-channel choices change.</summary>
+    public GuideBook Epg { get; private set; } = new();
     public volatile bool EpgRefreshing;
     public volatile string EpgStatus = "";
     public volatile string BusyText = "";
@@ -52,13 +56,16 @@ public sealed class Library
             var cached = LoadCompressed<PlaylistContent>(ContentCachePath(playlist.Id));
             if (cached != null) contents[playlist.Id] = cached;
         }
-        Rebuild();
-        var guide = LoadCompressed<EpgData>(EpgCachePath);
-        if (guide != null)
+        guideChoices = Storage.Load<Dictionary<string, GuideChoice>>(Storage.File("guide-choices.json")) ?? new Dictionary<string, GuideChoice>();
+        var guide = LoadCompressed<GuideCache>(EpgCachePath);
+        if (guide != null && guide.Sources != null && guide.Sources.Count > 0)
         {
-            Epg = guide;
-            if (guide.Updated != null) EpgStatus = "Guide updated " + guide.Updated.Value.ToLocalTime().ToString("g");
+            guideData = guide.Sources;
+            guideUpdated = guide.Updated;
+            if (guide.Updated != null) EpgStatus = "Guide updated " + TimeText.DateAndTime(guide.Updated.Value.ToLocalTime());
         }
+        Rebuild();
+        try { File.Delete(Path.Combine(Storage.CacheFolder, "guide.json.gz")); } catch (Exception) { }   // the older single-guide cache
         RaiseChanged();
     }
 
@@ -94,6 +101,7 @@ public sealed class Library
         if (index < 0) return false;
         Playlists[index] = playlist;
         SavePlaylists();
+        RebuildGuide();
         return await RefreshAsync(playlist.Id).ConfigureAwait(false);
     }
 
@@ -222,6 +230,7 @@ public sealed class Library
         Groups = order;
         MovieGroups = allMovies.Select(m => m.Group).Distinct().ToList();
         SeriesGroups = allSeries.Select(s => s.Group).Distinct().ToList();
+        RebuildGuide();
     }
 
     // ---- Lookups
@@ -374,7 +383,7 @@ public sealed class Library
             Id = channel.Id + ":" + Catchup.Epoch(programme.Start),
             Kind = PlayKind.Catchup,
             Title = programme.Title,
-            Subtitle = channel.Name + " · " + programme.Start.ToLocalTime().ToString("ddd HH:mm"),
+            Subtitle = channel.Name + " · " + TimeText.DayTime(programme.Start.ToLocalTime()),
             Url = address,
             UserAgent = UserAgentFor(channel.PlaylistId, channel),
             Channel = channel
@@ -383,31 +392,71 @@ public sealed class Library
 
     // ---- Guide
 
-    /// <summary>Guide addresses advertised by the playlists plus any the user typed in.</summary>
+    /// <summary>
+    /// The guide addresses of one playlist. Primary: the address typed in for it, or else whatever the
+    /// playlist itself advertises. Additional: the second address typed in; when only a primary address was
+    /// typed in, the playlist's own guide steps in as the additional one.
+    /// </summary>
+    public PlaylistGuide GuideSourcesFor(Playlist playlist)
+    {
+        var result = new PlaylistGuide();
+        if (playlist == null) return result;
+        PlaylistContent content;
+        lock (gate) contents.TryGetValue(playlist.Id, out content);
+        List<string> advertised = (content?.EpgUrls ?? new List<string>()).Where(url => !string.IsNullOrWhiteSpace(url)).Select(url => url.Trim()).Distinct().ToList();
+        string primary = (playlist.EpgUrl ?? "").Trim();
+        string additional = (playlist.EpgUrl2 ?? "").Trim();
+
+        if (primary.Length > 0) result.Primary.Add(primary);
+        else result.Primary.AddRange(advertised);
+
+        if (additional.Length > 0 && !result.Primary.Contains(additional)) result.Additional.Add(additional);
+        else if (additional.Length == 0 && primary.Length > 0) result.Additional.AddRange(advertised.Where(url => url != primary));
+        return result;
+    }
+
+    /// <summary>Every guide address in use, primary ones first.</summary>
     public List<string> EpgSources()
     {
         var result = new List<string>();
-        foreach (Playlist playlist in Playlists)
+        List<PlaylistGuide> guides = Playlists.ToList().Select(GuideSourcesFor).ToList();
+        foreach (string url in guides.SelectMany(g => g.Primary).Concat(guides.SelectMany(g => g.Additional)))
         {
-            string custom = (playlist.EpgUrl ?? "").Trim();
-            if (custom.Length > 0 && !result.Contains(custom)) result.Add(custom);
-            PlaylistContent content;
-            lock (gate) contents.TryGetValue(playlist.Id, out content);
-            if (content == null) continue;
-            foreach (string url in content.EpgUrls)
-            {
-                if (!string.IsNullOrEmpty(url) && !result.Contains(url)) result.Add(url);
-            }
+            if (!result.Contains(url)) result.Add(url);
         }
         return result;
+    }
+
+    private void RebuildGuide()
+    {
+        var map = new Dictionary<string, PlaylistGuide>();
+        foreach (Playlist playlist in Playlists.ToList()) map[playlist.Id] = GuideSourcesFor(playlist);
+        Dictionary<string, GuideChoice> choices;
+        lock (gate) choices = new Dictionary<string, GuideChoice>(guideChoices);
+        Epg = new GuideBook(guideData, map, choices, guideUpdated);
+    }
+
+    /// <summary>Chooses the guide source for one channel (right-click a channel, "Guide source").</summary>
+    public void SetGuideChoice(Channel channel, GuideChoice choice)
+    {
+        if (channel == null) return;
+        lock (gate)
+        {
+            if (choice == GuideChoice.Automatic) guideChoices.Remove(channel.Id);
+            else guideChoices[channel.Id] = choice;
+            Storage.Save(Storage.File("guide-choices.json"), guideChoices);
+        }
+        RebuildGuide();
+        RaiseChanged();
     }
 
     public async Task RefreshEpgIfNeededAsync()
     {
         double maxAge = Math.Max(1, Settings.EpgRefreshHours);
-        string sourceKey = string.Join("|", EpgSources());
+        List<string> sources = EpgSources();
+        string sourceKey = string.Join("|", sources);
         string previousKey = Storage.Load<List<string>>(Storage.File("guide-sources.json"))?.FirstOrDefault() ?? "";
-        bool fresh = Epg.Updated != null && (DateTime.UtcNow - Epg.Updated.Value).TotalHours < maxAge && Epg.Programmes.Count > 0;
+        bool fresh = guideUpdated != null && (DateTime.UtcNow - guideUpdated.Value).TotalHours < maxAge && Epg.HasListings;
         if (fresh && sourceKey == previousKey) return;
         await RefreshEpgAsync().ConfigureAwait(false);
     }
@@ -431,26 +480,36 @@ public sealed class Library
             DateTime start = DateTime.UtcNow.AddDays(-Math.Max(0, Settings.EpgPastDays));
             DateTime end = DateTime.UtcNow.AddDays(Math.Max(1, Settings.EpgFutureDays));
 
-            var merged = new EpgData();
+            var fresh = new Dictionary<string, EpgData>();
             int failures = 0;
             for (int i = 0; i < sources.Count; i++)
             {
                 EpgStatus = $"Updating guide ({i + 1} of {sources.Count})…";
                 RaiseChanged();
                 EpgData part = await FetchEpgAsync(sources[i], ids, names, start, end).ConfigureAwait(false);
-                if (part != null) merged.Merge(part);
-                else failures++;
+                if (part != null)
+                {
+                    fresh[sources[i]] = part;
+                }
+                else
+                {
+                    failures++;
+                    // Keep what was loaded from this source last time rather than losing it.
+                    if (guideData.TryGetValue(sources[i], out EpgData previous)) fresh[sources[i]] = previous;
+                }
             }
-            if (merged.Programmes.Count == 0)
+            if (!fresh.Values.Any(data => data.Programmes.Count > 0))
             {
                 EpgStatus = failures > 0 ? "The guide could not be downloaded." : "The guide has no listings for these channels.";
                 return;
             }
-            merged.Updated = DateTime.UtcNow;
-            Epg = merged;
-            EpgStatus = "Guide updated " + DateTime.Now.ToString("g");
+            guideData = fresh;
+            guideUpdated = DateTime.UtcNow;
+            RebuildGuide();
+            EpgStatus = "Guide updated " + TimeText.DateAndTime(DateTime.Now)
+                        + (failures > 0 ? $" ({failures} of {sources.Count} sources could not be downloaded or had no listings)" : "");
             Storage.Save(Storage.File("guide-sources.json"), new List<string> { string.Join("|", sources) });
-            SaveCompressed(EpgCachePath, merged);
+            SaveCompressed(EpgCachePath, new GuideCache { Sources = fresh, Updated = guideUpdated });
         }
         finally
         {
@@ -501,7 +560,7 @@ public sealed class Library
     // ---- Disk cache
 
     private static string ContentCachePath(string id) => Path.Combine(Storage.CacheFolder, "playlist-" + id + ".json.gz");
-    private static string EpgCachePath => Path.Combine(Storage.CacheFolder, "guide.json.gz");
+    private static string EpgCachePath => Path.Combine(Storage.CacheFolder, "guides.json.gz");
 
     private static readonly JsonSerializerOptions CacheOptions = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 

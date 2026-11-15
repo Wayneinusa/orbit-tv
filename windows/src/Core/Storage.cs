@@ -155,6 +155,10 @@ public sealed class Settings
     public bool HardwareDecoding { get; set; } = true;
     public List<string> HiddenGroups { get; set; } = new();
     public int Volume { get; set; } = 100;
+    /// <summary>False shows times as 4:36 PM, true as 16:36.</summary>
+    public bool TwentyFourHourClock { get; set; } = false;
+    /// <summary>Whether the small stream statistics line is shown in the player.</summary>
+    public bool ShowStreamStats { get; set; } = false;
 
     [JsonIgnore]
     public string EffectiveRecordingsFolder => string.IsNullOrWhiteSpace(RecordingsFolder) ? Storage.DefaultMediaFolder("Recordings") : RecordingsFolder;

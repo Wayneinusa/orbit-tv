@@ -57,7 +57,7 @@ public sealed class GuidePage : PageBase
         g.Clear(Theme.Background);
         int x = group.Right + Theme.S(16);
         int width = Math.Max(10, earlier.Left - x - Theme.S(10));
-        Theme.DrawText(g, grid.WindowStart.ToLocalTime().ToString("dddd d MMMM"), Theme.Ui(11f, FontStyle.Bold), Theme.Text, new Rectangle(x, Theme.S(8), width, Theme.S(24)));
+        Theme.DrawText(g, TimeText.LongDate(grid.WindowStart.ToLocalTime()), Theme.Ui(11f, FontStyle.Bold), Theme.Text, new Rectangle(x, Theme.S(8), width, Theme.S(24)));
         Theme.DrawText(g, App.Library.EpgStatus, Theme.Ui(8.5f), Theme.Secondary, new Rectangle(x, Theme.S(30), width, Theme.S(20)));
     }
 
@@ -87,8 +87,22 @@ public sealed class GuideGrid : Control
     private List<Channel> channels = new();
     private int scroll;
     private Point hover = new(-1, -1);
+    private bool draggingThumb;
+    private int dragOffset;
 
     public DateTime WindowStart { get; private set; } = Slot(DateTime.UtcNow);
+
+    /// <summary>What a click on a channel does. The Guide screen watches it; Live TV previews it.</summary>
+    public Action<Channel> ChannelClicked;
+    /// <summary>Width of the channel column in pixels; 0 picks one from the control's width.</summary>
+    public int ChannelColumn;
+    /// <summary>Shows today's date and the time above the channel column.</summary>
+    public bool ShowClock;
+    /// <summary>Keeps the time window on the current half hour until the viewer pages away.</summary>
+    public bool FollowNow;
+    /// <summary>A channel to outline, for example the one a search led to.</summary>
+    public string MarkedId = "";
+    public string EmptyText = "No channels in this group";
 
     public GuideGrid(AppServices app)
     {
@@ -102,7 +116,7 @@ public sealed class GuideGrid : Control
 
     private int RowHeight => Theme.S(60);
     private int RulerHeight => Theme.S(30);
-    private int ChannelWidth => Math.Min(Theme.S(250), Math.Max(Theme.S(150), Width / 5));
+    private int ChannelWidth => ChannelColumn > 0 ? ChannelColumn : Math.Min(Theme.S(250), Math.Max(Theme.S(150), Width / 5));
     private int TimelineWidth => Math.Max(50, Width - ChannelWidth - Theme.S(10));
 
     /// <summary>Visible time span: roughly one hour per 330 pixels, in half-hour steps.</summary>
@@ -119,6 +133,7 @@ public sealed class GuideGrid : Control
 
     public void GoToNow()
     {
+        following = true;
         WindowStart = Slot(DateTime.UtcNow);
         Parent?.Invalidate();
         Invalidate();
@@ -126,9 +141,50 @@ public sealed class GuideGrid : Control
 
     public void Page(int direction)
     {
+        following = false;
         WindowStart = WindowStart.AddHours(direction * Math.Max(1, Hours - 0.5));
         Parent?.Invalidate();
         Invalidate();
+    }
+
+    private bool following = true;
+
+    /// <summary>Called now and then by the owner: moves the window along when the half hour changes.</summary>
+    public void KeepUp()
+    {
+        if (!FollowNow || !following) return;
+        DateTime slot = Slot(DateTime.UtcNow);
+        if (slot == WindowStart) return;
+        WindowStart = slot;
+        Parent?.Invalidate();
+    }
+
+    public void ScrollToTop()
+    {
+        scroll = 0;
+        Invalidate();
+    }
+
+    /// <summary>Scrolls so that the channel at <paramref name="index"/> can be seen.</summary>
+    public void EnsureVisible(int index, bool center = false)
+    {
+        if (index < 0 || index >= channels.Count) return;
+        int top = index * RowHeight, view = Height - RulerHeight;
+        if (center) scroll = top - (view - RowHeight) / 2;
+        else if (top < scroll) scroll = top;
+        else if (top + RowHeight > scroll + view) scroll = top + RowHeight - view;
+        scroll = Math.Clamp(scroll, 0, MaxScroll);
+        Invalidate();
+    }
+
+    private Rectangle ThumbBounds()
+    {
+        if (MaxScroll <= 0) return Rectangle.Empty;
+        int track = Height - RulerHeight;
+        long content = (long)channels.Count * RowHeight;
+        int thumb = Math.Max(Theme.S(30), (int)(track * (long)track / content));
+        int y = RulerHeight + (int)((long)(track - thumb) * scroll / MaxScroll);
+        return new Rectangle(Width - Theme.S(8), y, Theme.S(6), thumb);
     }
 
     private int XFor(DateTime utc)
@@ -147,13 +203,14 @@ public sealed class GuideGrid : Control
 
         if (channels.Count == 0)
         {
-            Theme.DrawText(g, "No channels in this group", Theme.Ui(10.5f), Theme.Faint, new Rectangle(0, 0, Width, Theme.S(120)), HorizontalAlignment.Center);
+            Theme.DrawText(g, EmptyText, Theme.Ui(10.5f), Theme.Faint, new Rectangle(0, 0, Width, Theme.S(120)), HorizontalAlignment.Center);
             return;
         }
 
         // Rows
         int first = Math.Max(0, scroll / RowHeight);
         int last = Math.Min(channels.Count - 1, (scroll + Height) / RowHeight);
+        string playingId = app.Player.Item != null && app.Player.Item.IsLive ? app.Player.Item.Id : "";
         Region clip = g.Clip;
         g.SetClip(new Rectangle(0, RulerHeight, Width, Height - RulerHeight));
         for (int i = first; i <= last; i++)
@@ -162,11 +219,39 @@ public sealed class GuideGrid : Control
             int y = RulerHeight + i * RowHeight - scroll;
             var cell = new Rectangle(Theme.S(6), y + Theme.S(2), ChannelWidth - Theme.S(10), RowHeight - Theme.S(4));
             bool channelHover = hover.Y >= y && hover.Y < y + RowHeight && hover.X < ChannelWidth;
-            Theme.FillRound(g, channelHover ? Theme.Hover : Theme.Panel, cell, Theme.S(8));
+            bool playing = playingId.Length > 0 && playingId == channel.Id;
+            bool marked = MarkedId.Length > 0 && MarkedId == channel.Id;
+            Theme.FillRound(g, playing ? Theme.AccentSoft : channelHover ? Theme.Hover : Theme.Panel, cell, Theme.S(8));
+            if (playing || marked) Theme.StrokeRound(g, playing ? Theme.Accent : Theme.Warn, cell, Theme.S(8));
             Theme.DrawText(g, channel.Number.ToString(), Theme.Ui(8f), Theme.Secondary, new Rectangle(cell.X + Theme.S(2), cell.Y, Theme.S(32), cell.Height), HorizontalAlignment.Right);
             var logo = new Rectangle(cell.X + Theme.S(40), cell.Y + Theme.S(8), Theme.S(48), cell.Height - Theme.S(16));
             Painters.Logo(g, this, channel.Logo, channel.Name, logo);
-            Theme.DrawText(g, channel.Name, Theme.Ui(9f, FontStyle.Bold), Theme.Text, new Rectangle(logo.Right + Theme.S(8), cell.Y, cell.Right - logo.Right - Theme.S(12), cell.Height));
+
+            // One small marker at the right edge: recording, playing, favourite or catch-up.
+            int nameRight = cell.Right - Theme.S(6);
+            var marker = new Rectangle(cell.Right - Theme.S(24), cell.Y, Theme.S(20), cell.Height);
+            if (app.Recordings.ActiveFor(channel.Id) != null)
+            {
+                using var dot = new SolidBrush(Theme.Live);
+                g.FillEllipse(dot, marker.X + Theme.S(5), marker.Y + marker.Height / 2 - Theme.S(5), Theme.S(10), Theme.S(10));
+                nameRight = marker.X - Theme.S(2);
+            }
+            else if (playing)
+            {
+                Theme.DrawGlyph(g, Theme.Glyph.Play, 8.5f, Theme.Text, marker);
+                nameRight = marker.X - Theme.S(2);
+            }
+            else if (app.Library.IsFavorite(channel))
+            {
+                Theme.DrawGlyph(g, Theme.Glyph.StarFilled, 8f, Theme.Warn, marker);
+                nameRight = marker.X - Theme.S(2);
+            }
+            else if (channel.Catchup != null)
+            {
+                Theme.DrawGlyph(g, Theme.Glyph.Catchup, 8f, Theme.Secondary, marker);
+                nameRight = marker.X - Theme.S(2);
+            }
+            Theme.DrawText(g, channel.Name, Theme.Ui(9f, FontStyle.Bold), Theme.Text, new Rectangle(logo.Right + Theme.S(8), cell.Y, nameRight - logo.Right - Theme.S(8), cell.Height));
 
             g.SetClip(new Rectangle(ChannelWidth, Math.Max(y, RulerHeight), TimelineWidth, RowHeight), System.Drawing.Drawing2D.CombineMode.Replace);
             List<Programme> items = app.Library.Epg.Between(channel, WindowStart, end);
@@ -217,8 +302,15 @@ public sealed class GuideGrid : Control
         }
         g.Clip = clip;
 
+        Rectangle thumb = ThumbBounds();
+        if (!thumb.IsEmpty) Theme.FillRound(g, draggingThumb ? Theme.Secondary : Theme.Faint, thumb, thumb.Width / 2);
+
         // Ruler with half-hour marks
         Theme.Fill(g, Theme.Background, new Rectangle(0, 0, Width, RulerHeight));
+        if (ShowClock)
+        {
+            Theme.DrawText(g, TimeText.DateAndTime(DateTime.Now), Theme.Ui(9f, FontStyle.Bold), Theme.Text, new Rectangle(Theme.S(12), 0, ChannelWidth - Theme.S(14), RulerHeight));
+        }
         for (DateTime mark = WindowStart; mark < end; mark = mark.AddMinutes(30))
         {
             int x = XFor(mark);
@@ -251,7 +343,25 @@ public sealed class GuideGrid : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (draggingThumb)
+        {
+            Rectangle thumb = ThumbBounds();
+            int range = Height - RulerHeight - thumb.Height;
+            if (range > 0) scroll = (int)((long)(e.Y - RulerHeight - dragOffset) * MaxScroll / range);
+            scroll = Math.Clamp(scroll, 0, MaxScroll);
+            Invalidate();
+            return;
+        }
         hover = e.Location;
+        Invalidate();
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (!draggingThumb) return;
+        draggingThumb = false;
+        Capture = false;
         Invalidate();
     }
 
@@ -267,12 +377,22 @@ public sealed class GuideGrid : Control
         base.OnMouseDown(e);
         if (CanFocus) Focus();
         if (e.Y < RulerHeight || channels.Count == 0) return;
+        Rectangle thumb = ThumbBounds();
+        if (e.Button == MouseButtons.Left && !thumb.IsEmpty && e.X >= Width - Theme.S(12))
+        {
+            draggingThumb = true;
+            dragOffset = thumb.Contains(e.Location) ? e.Y - thumb.Y : thumb.Height / 2;
+            Capture = true;
+            OnMouseMove(e);
+            return;
+        }
         int index = (e.Y - RulerHeight + scroll) / RowHeight;
         if (index < 0 || index >= channels.Count) return;
         Channel channel = channels[index];
         if (e.X < ChannelWidth)
         {
             if (e.Button == MouseButtons.Right) LivePage.ChannelMenu(this, app, channel, PointToScreen(e.Location));
+            else if (ChannelClicked != null) ChannelClicked(channel);
             else app.Watch(channel);
             return;
         }

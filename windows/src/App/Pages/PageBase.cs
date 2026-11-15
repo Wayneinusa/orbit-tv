@@ -89,15 +89,66 @@ public static class Sheets
             dialog.AddAction($"{label} (until {Theme.Time(now.AddMinutes(minutes))})", Theme.Glyph.Record,
                 () => app.RecordNow(channel, current?.Title ?? channel.Name, DateTime.UtcNow.AddMinutes(captured)), Theme.Live);
         }
+        dialog.AddAction("Custom time: choose when it starts and ends…", Theme.Glyph.Clock, () =>
+        {
+            using var custom = new RecordTimeDialog(app, channel, current);
+            custom.ShowDialog(owner);
+        });
         dialog.AddClose("Cancel");
         using (dialog) dialog.ShowDialog(owner);
+    }
+
+    /// <summary>Lets the viewer choose which guide source one channel takes its listings from.</summary>
+    public static void GuideSource(IWin32Window owner, AppServices app, Channel channel)
+    {
+        using ActionDialog dialog = GuideSourceDialog(app, channel);
+        dialog.ShowDialog(owner);
+    }
+
+    public static ActionDialog GuideSourceDialog(AppServices app, Channel channel)
+    {
+        GuideBook guide = app.Library.Epg;
+        GuideChoice chosen = guide.ChoiceFor(channel);
+        bool hasAdditional = guide.HasAdditional(channel);
+        bool inPrimary = guide.ListFrom(channel, false).Count > 0, inAdditional = guide.ListFrom(channel, true).Count > 0;
+        string inUse = guide.ListFor(channel).Count == 0 ? "No listings are shown for this channel at the moment."
+            : guide.UsesAdditional(channel) ? "Its listings currently come from the additional guide."
+            : "Its listings currently come from the primary guide.";
+        var dialog = new ActionDialog("Guide source", channel.Name,
+            inUse + " The primary and additional guide addresses are set per playlist in Settings, under Playlists.");
+
+        string Mark(GuideChoice choice) => choice == chosen ? "   ✓" : "";
+        string Has(bool listed) => listed ? "has listings for this channel" : "no listings for this channel";
+        void Choose(GuideChoice choice, string said)
+        {
+            app.Library.SetGuideChoice(channel, choice);
+            app.Toast(channel.Name + ": " + said);
+        }
+
+        dialog.AddAction("Automatic (primary guide first, then additional)" + Mark(GuideChoice.Automatic), Theme.Glyph.Refresh,
+            () => Choose(GuideChoice.Automatic, "guide source chosen automatically"));
+        dialog.AddAction($"Primary guide ({Has(inPrimary)})" + Mark(GuideChoice.Primary), Theme.Glyph.Guide,
+            () => Choose(GuideChoice.Primary, "using the primary guide"));
+        if (hasAdditional)
+        {
+            dialog.AddAction($"Additional guide ({Has(inAdditional)})" + Mark(GuideChoice.Additional), Theme.Glyph.Guide,
+                () => Choose(GuideChoice.Additional, "using the additional guide"));
+        }
+        else
+        {
+            dialog.AddNote("This channel's playlist has no additional guide yet. Add one in Settings, under Playlists.");
+        }
+        dialog.AddAction("No guide for this channel" + Mark(GuideChoice.None), Theme.Glyph.Close,
+            () => Choose(GuideChoice.None, "guide switched off"));
+        dialog.AddClose("Cancel");
+        return dialog;
     }
 
     /// <summary>Details of a guide entry with whatever can be done with it right now.</summary>
     public static void Programme(IWin32Window owner, AppServices app, Channel channel, Programme programme)
     {
         DateTime now = DateTime.UtcNow;
-        string when = programme.Start.ToLocalTime().ToString("ddd d MMM") + " · " + Theme.Range(programme);
+        string when = TimeText.ShortDate(programme.Start.ToLocalTime()) + " · " + Theme.Range(programme);
         var dialog = new ActionDialog(programme.Title, channel.Name + " · " + when, programme.Desc);
 
         if (programme.IsLive(now))

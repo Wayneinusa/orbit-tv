@@ -69,10 +69,10 @@ public static class SelfTest
                 form.Close();
             };
             // A safety net so a hang cannot stall the build forever.
-            var watchdog = new System.Windows.Forms.Timer { Interval = 6 * 60 * 1000 };
+            var watchdog = new System.Windows.Forms.Timer { Interval = 8 * 60 * 1000 };
             watchdog.Tick += (_, _) =>
             {
-                Log("FAIL  Timed out after 6 minutes.");
+                Log("FAIL  Timed out after 8 minutes.");
                 exitCode = 4;
                 Environment.Exit(4);
             };
@@ -117,6 +117,26 @@ public static class SelfTest
         }
     }
 
+    /// <summary>Opens a dialog next to the main window (without blocking) and saves a picture of it.</summary>
+    private static async Task ShotOf(Form dialog, MainForm owner, string name)
+    {
+        shot++;
+        try
+        {
+            dialog.StartPosition = FormStartPosition.Manual;
+            dialog.Location = new Point(owner.Left + Theme.S(120), owner.Top + Theme.S(80));
+            dialog.Show(owner);
+            await Task.Delay(700);
+            using var bitmap = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(bitmap, new Rectangle(0, 0, dialog.Width, dialog.Height));
+            bitmap.Save(Path.Combine(outDir, $"{shot:00}-{name}.png"), System.Drawing.Imaging.ImageFormat.Png);
+        }
+        catch (Exception ex)
+        {
+            Log("note  Could not draw " + name + ": " + ex.Message);
+        }
+    }
+
     private static async Task<bool> Wait(Func<bool> condition, double seconds)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
@@ -140,8 +160,43 @@ public static class SelfTest
             library.Channels.Count == 12 && library.Movies.Count == 6 && library.Series.Count == 2,
             $"{library.Channels.Count} channels, {library.Movies.Count} movies, {library.Series.Count} series");
         await library.RefreshEpgAsync();
-        Check("Guide loads", library.Epg.Programmes.Count == 12, library.Epg.Programmes.Count + " channels with listings; " + library.EpgStatus);
+        string primaryGuide = server.Base + "/guide.xml", extraGuide = server.Base + "/guide2.xml";
+        Check("Guide loads", library.Epg.ChannelsIn(primaryGuide) == 10, library.Epg.ChannelsIn(primaryGuide) + " channels with listings; " + library.EpgStatus);
         if (library.Channels.Count == 0 || library.Movies.Count == 0) return;
+        DateTime utcNow = DateTime.UtcNow;
+        string clock = Theme.Time(utcNow);
+        Check("Times are shown in 12-hour format", clock.EndsWith("AM", StringComparison.Ordinal) || clock.EndsWith("PM", StringComparison.Ordinal), clock);
+
+        // 1b. Primary and additional guide. The primary one has nothing for channels 11 and 12.
+        Check("A channel missing from the primary guide has no listings at first", library.Epg.Current(library.Channels[10], utcNow) == null);
+        Playlist sample = library.Playlists[0];
+        var edited = new Playlist
+        {
+            Id = sample.Id, Name = sample.Name, Kind = sample.Kind, Url = sample.Url, EpgUrl = sample.EpgUrl,
+            EpgUrl2 = extraGuide, LastRefreshed = sample.LastRefreshed
+        };
+        await ShotOf(new PlaylistDialog(app, edited), form, "playlist-dialog");
+        foreach (Form open in Application.OpenForms.OfType<PlaylistDialog>().ToList()) open.Close();
+        Check("Playlist reloads with an additional guide address", await library.UpdateAsync(edited), library.ErrorText);
+        await library.RefreshEpgAsync();
+        Channel first = library.Channels[0], eleventh = library.Channels[10];
+        Programme filled = library.Epg.Current(eleventh, utcNow);
+        Check("The additional guide fills in channels the primary guide lacks",
+            filled != null && filled.Title.StartsWith("Extra", StringComparison.Ordinal) && library.Epg.UsesAdditional(eleventh),
+            filled?.Title ?? "no listing; " + library.EpgStatus);
+        Programme kept = library.Epg.Current(first, utcNow);
+        Check("Channels in the primary guide keep using it",
+            kept != null && !kept.Title.StartsWith("Extra", StringComparison.Ordinal) && !library.Epg.UsesAdditional(first), kept?.Title ?? "no listing");
+        library.SetGuideChoice(first, GuideChoice.Additional);
+        Programme switched = library.Epg.Current(first, utcNow);
+        Check("One channel can be switched to the additional guide", switched != null && switched.Title.StartsWith("Extra", StringComparison.Ordinal), switched?.Title ?? "no listing");
+        await ShotOf(Sheets.GuideSourceDialog(app, first), form, "guide-source-dialog");
+        foreach (Form open in Application.OpenForms.OfType<ActionDialog>().ToList()) open.Close();
+        library.SetGuideChoice(first, GuideChoice.None);
+        Check("A channel's guide can be switched off", library.Epg.Current(first, utcNow) == null);
+        library.SetGuideChoice(first, GuideChoice.Automatic);
+        Check("Automatic goes back to the primary guide", library.Epg.Current(first, utcNow)?.Title == kept?.Title);
+
         Channel channel = library.Channels[0];
         library.ToggleFavorite(library.Channels[1]);
 
@@ -157,6 +212,32 @@ public static class SelfTest
         Check("Player opens for the live channel", form.InPlayer && player.Item != null && player.Item.IsLive);
         Check("Speed control is not offered for live channels", !player.CanChangeSpeed);
         await Shot(form, "player-live", true);
+
+        // 2b. Stream statistics in the corner
+        if (!app.Settings.ShowStreamStats) form.ToggleStats();
+        bool statsReady = await Wait(() => player.VideoWidth > 0 && player.BitrateKbps > 0 && form.StatsShown.Contains('×'), 12);
+        Check("Stream statistics show the resolution and bitrate", statsReady,
+            $"shown: '{form.StatsShown}', engine: '{player.StatsText}', {player.VideoWidth}x{player.VideoHeight}, {player.BitrateKbps:0} kbps");
+        await Task.Delay(4500);     // let the controls fade so the picture shows the corner as a viewer sees it
+        await Shot(form, "player-live-stats", true);
+
+        // 2c. The mouse pointer disappears after a few seconds over the video
+        form.Activate();
+        Rectangle window = form.RectangleToScreen(form.ClientRectangle);
+        Cursor.Position = new Point(window.X + window.Width / 2, window.Y + window.Height / 3);
+        await Task.Delay(600);
+        if (Form.ActiveForm == form)
+        {
+            bool hidden = await Wait(() => form.PointerHidden, 8);
+            Check("The mouse pointer hides after a few seconds of watching", hidden);
+            Cursor.Position = new Point(window.X + window.Width / 2 + 40, window.Y + window.Height / 3 + 40);
+            bool back = await Wait(() => !form.PointerHidden, 3);
+            Check("Moving the mouse brings the pointer back", back);
+        }
+        else
+        {
+            Log("note  The window is not the active one on this machine, so the pointer check was skipped.");
+        }
         form.ShowChannelList();
         await Shot(form, "player-channel-list");
         form.HideChannelList();
@@ -197,6 +278,18 @@ public static class SelfTest
         await Shot(form, "series");
         form.GoTo("search");
         await Shot(form, "search");
+        if (form.PageFor("search") is SearchPage searchPage)
+        {
+            await searchPage.SearchFor("sports");
+            Check("Search finds channels", searchPage.ResultCount > 0, searchPage.ResultCount + " rows");
+            await Shot(form, "search-results");
+        }
+        Channel sportsChannel = library.Channels[5];
+        app.OpenCategory(sportsChannel);
+        Check("Open category shows the channel's category in Live TV", form.CurrentKey == "live" && app.SelectedGroup == sportsChannel.Group,
+            $"screen {form.CurrentKey}, group {app.SelectedGroup}");
+        await Shot(form, "live-category");
+        app.SelectedGroup = ChannelGroups.All;
         form.GoTo("multiview");
         await Shot(form, "multiview");
         form.GoTo("settings");
@@ -281,6 +374,49 @@ public static class SelfTest
             await Shot(form, "player-recording-2x", true);
             form.ClosePlayer();
         }
+
+        // 8. Recording at a custom time
+        Channel custom = library.Channels[2];
+        DateTime clockNow = DateTime.Now;
+        DateTime minute = new DateTime(clockNow.Year, clockNow.Month, clockNow.Day, clockNow.Hour, clockNow.Minute, 0, DateTimeKind.Local);
+        var later = new RecordTimeDialog(app, custom, null);
+        await ShotOf(later, form, "record-custom-time");
+        DateTime bookedStart = minute.AddDays(1), bookedEnd = minute.AddDays(1).AddMinutes(90);
+        later.StartValue = bookedStart;
+        later.EndValue = bookedEnd;
+        Check("The custom time pickers keep the chosen start and end", later.StartValue == bookedStart && later.EndValue == bookedEnd,
+            $"{later.StartValue:g} to {later.EndValue:g}");
+        bool booked = later.Confirm();
+        Recording booking = app.Recordings.Snapshot().FirstOrDefault(r => r.ChannelId == custom.Id && r.Status == RecordingStatus.Scheduled);
+        Check("A custom start and end time in the future becomes a booking",
+            booked && booking != null && Math.Abs((booking.Start.ToLocalTime() - bookedStart).TotalSeconds) < 1 && Math.Abs((booking.End.ToLocalTime() - bookedEnd).TotalSeconds) < 1,
+            booking == null ? "no booking" : $"{booking.Start.ToLocalTime():g} to {booking.End.ToLocalTime():g}");
+        form.GoTo("recordings");
+        await Shot(form, "recordings-booked");
+        if (booking != null) app.Recordings.Delete(booking.Id);
+
+        var wrong = new RecordTimeDialog(app, custom, null);
+        wrong.StartValue = minute.AddHours(2);
+        wrong.EndValue = minute.AddHours(1);
+        Check("An end time before the start time is refused", !wrong.Confirm());
+        wrong.Dispose();
+
+        var rightNow = new RecordTimeDialog(app, custom, null);
+        rightNow.StartValue = minute;
+        rightNow.EndValue = minute.AddMinutes(3);
+        bool started = rightNow.Confirm();
+        bool running = await Wait(() => app.Recordings.ActiveFor(custom.Id) != null, 15);
+        Recording nowRecording = app.Recordings.ActiveFor(custom.Id);
+        Check("A custom time that has already started records right away", started && running && nowRecording != null
+            && Math.Abs((nowRecording.End.ToLocalTime() - minute.AddMinutes(3)).TotalSeconds) < 1,
+            nowRecording == null ? "not recording" : $"until {nowRecording.End.ToLocalTime():T}");
+        if (nowRecording != null)
+        {
+            app.Recordings.Stop(nowRecording.Id);
+            await Wait(() => app.Recordings.ActiveFor(custom.Id) == null, 15);
+            // Do not leave this one converting in the background while the app closes.
+            await Wait(() => app.Recordings.Snapshot().All(r => r.Status != RecordingStatus.Converting), 30);
+        }
         await Task.Delay(500);
     }
 }
@@ -359,14 +495,15 @@ public sealed class SampleServer : IDisposable
         return text.ToString();
     }
 
-    private static string Guide()
+    /// <summary>A guide for the first <paramref name="channelCount"/> channels, every title starting with <paramref name="prefix"/>.</summary>
+    private static string Guide(int channelCount, string prefix)
     {
         var text = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tv>\n");
         string[] titles = { "Morning Report", "The Big Match", "City Stories", "Late Review", "World in Focus", "Kitchen Table", "Open Road", "Night Shift" };
-        for (int c = 1; c <= 12; c++) text.Append($"<channel id=\"ch{c}\"><display-name>Channel {c}</display-name></channel>\n");
+        for (int c = 1; c <= channelCount; c++) text.Append($"<channel id=\"ch{c}\"><display-name>Channel {c}</display-name></channel>\n");
         DateTime now = DateTime.UtcNow;
         DateTime start = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc).AddHours(-4);
-        for (int c = 1; c <= 12; c++)
+        for (int c = 1; c <= channelCount; c++)
         {
             DateTime at = start;
             int n = c;
@@ -375,7 +512,7 @@ public sealed class SampleServer : IDisposable
                 int minutes = (n % 3 + 1) * 30;
                 DateTime stop = at.AddMinutes(minutes);
                 text.Append($"<programme start=\"{at:yyyyMMddHHmmss} +0000\" stop=\"{stop:yyyyMMddHHmmss} +0000\" channel=\"ch{c}\">");
-                text.Append($"<title>{titles[n % titles.Length]}</title><desc>Sample programme {n} for the self-test. It has a description long enough to wrap onto a second line in the details pane.</desc></programme>\n");
+                text.Append($"<title>{prefix}{titles[n % titles.Length]}</title><desc>Sample programme {n} for the self-test. It has a description long enough to wrap onto a second line in the details pane.</desc></programme>\n");
                 at = stop;
                 n++;
             }
@@ -423,9 +560,10 @@ public sealed class SampleServer : IDisposable
                     await Head(200, "audio/x-mpegurl", body.Length);
                     await stream.WriteAsync(body);
                 }
-                else if (path == "/guide.xml")
+                else if (path == "/guide.xml" || path == "/guide2.xml")
                 {
-                    byte[] body = Encoding.UTF8.GetBytes(Guide());
+                    // The primary guide leaves out the last two channels; the additional one has all twelve.
+                    byte[] body = Encoding.UTF8.GetBytes(path == "/guide.xml" ? Guide(10, "") : Guide(12, "Extra: "));
                     await Head(200, "application/xml", body.Length);
                     await stream.WriteAsync(body);
                 }

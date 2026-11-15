@@ -216,6 +216,15 @@ public sealed class SearchPage : PageBase
         public string Title = "";
         public string Detail = "";
         public Action Open;
+        /// <summary>Set for channel results: the channel whose category can be opened.</summary>
+        public Channel Channel;
+    }
+
+    /// <summary>The "Open category" button drawn at the right end of a channel result.</summary>
+    private static Rectangle CategoryButton(Rectangle row)
+    {
+        int width = Math.Min(Theme.S(300), row.Width / 2);
+        return new Rectangle(row.Right - width - Theme.S(18), row.Y + Theme.S(10), width, row.Height - Theme.S(20));
     }
 
     private readonly TextBox box = Theme.Style(new TextBox());
@@ -241,10 +250,38 @@ public sealed class SearchPage : PageBase
         list.DrawItem = (g, index, bounds, state) =>
         {
             Result result = results[index];
-            if (result.Section != null) Painters.SectionRow(g, bounds, result.Section);
-            else Painters.TwoLineRow(g, bounds, state, result.Glyph, Theme.Secondary, result.Title, result.Detail);
+            if (result.Section != null)
+            {
+                Painters.SectionRow(g, bounds, result.Section);
+                return;
+            }
+            if (result.Channel == null || string.IsNullOrEmpty(result.Channel.Group))
+            {
+                Painters.TwoLineRow(g, bounds, state, result.Glyph, Theme.Secondary, result.Title, result.Detail);
+                return;
+            }
+            // A channel: the row itself plays it, the button on the right opens its category in Live TV.
+            Rectangle button = CategoryButton(bounds);
+            Painters.TwoLineRow(g, new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height), state, result.Glyph, Theme.Secondary, result.Title, "", false,
+                button.X - bounds.X - Theme.S(12));
+            Theme.FillRound(g, Theme.Raised, button, Theme.S(8));
+            Theme.StrokeRound(g, Theme.Hover, button, Theme.S(8), 1f);
+            Theme.DrawGlyph(g, Theme.Glyph.Folder, 10f, Theme.Accent, new Rectangle(button.X + Theme.S(6), button.Y, Theme.S(24), button.Height));
+            Theme.DrawText(g, "Open category: " + result.Channel.Group, Theme.Ui(9f), Theme.Text,
+                new Rectangle(button.X + Theme.S(34), button.Y, button.Width - Theme.S(42), button.Height));
         };
-        list.Activated += index => results[index].Open?.Invoke();
+        list.Activated += index =>
+        {
+            Result result = results[index];
+            bool onButton = result.Channel != null && !string.IsNullOrEmpty(result.Channel.Group)
+                            && CategoryButton(list.BoundsOf(index)).Contains(list.LastClick);
+            if (onButton) App.OpenCategory(result.Channel);
+            else result.Open?.Invoke();
+        };
+        list.ContextRequested += (index, point) =>
+        {
+            if (results[index].Channel != null) LivePage.ChannelMenu(this, App, results[index].Channel, point);
+        };
         Controls.Add(box);
         Controls.Add(list);
     }
@@ -258,6 +295,17 @@ public sealed class SearchPage : PageBase
     protected override void OnPaint(PaintEventArgs e) => e.Graphics.Clear(Theme.Background);
 
     public override void OnShown() => box.Focus();
+
+    /// <summary>Types a search and waits for its results (used by the self-test).</summary>
+    public Task SearchFor(string text)
+    {
+        box.Text = text;
+        delay.Stop();
+        return RunAsync();
+    }
+
+    /// <summary>How many result rows are listed, section titles included.</summary>
+    public int ResultCount => results.Count;
 
     private async Task RunAsync()
     {
@@ -273,7 +321,7 @@ public sealed class SearchPage : PageBase
 
         Library library = App.Library;
         List<Channel> allChannels = library.Channels;
-        EpgData guide = library.Epg;
+        GuideBook guide = library.Epg;
         DateTime now = DateTime.UtcNow;
         bool Match(string value) => value != null && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
 
@@ -285,7 +333,7 @@ public sealed class SearchPage : PageBase
             if (channels.Count > 0) output.Add(new Result { Section = $"Channels ({channels.Count})" });
             foreach (Channel channel in channels)
             {
-                output.Add(new Result { Glyph = Theme.Glyph.Tv, Title = channel.Name, Detail = channel.Group, Open = () => App.Watch(channel) });
+                output.Add(new Result { Glyph = Theme.Glyph.Tv, Title = channel.Name, Detail = channel.Group, Open = () => App.Watch(channel), Channel = channel });
             }
 
             var programmes = new List<Result>();
@@ -300,7 +348,7 @@ public sealed class SearchPage : PageBase
                     {
                         Glyph = Theme.Glyph.Guide,
                         Title = programme.Title,
-                        Detail = channel.Name + " · " + programme.Start.ToLocalTime().ToString("ddd d MMM") + " " + Theme.Range(programme),
+                        Detail = channel.Name + " · " + TimeText.ShortDate(programme.Start.ToLocalTime()) + " · " + Theme.Range(programme),
                         Open = () => Sheets.Programme(this, App, owner, hit)
                     });
                     if (programmes.Count >= 40) break;
@@ -366,7 +414,7 @@ public sealed class SettingsPage : PageBase
         {
             Playlist playlist = App.Library.Playlists[index];
             string detail = playlist.Kind == PlaylistKind.Xtream ? "Xtream · " + playlist.Username + " @ " + XtreamClient.Normalize(playlist.Server) : "M3U · " + playlist.Url;
-            if (playlist.LastRefreshed != null) detail += " · loaded " + playlist.LastRefreshed.Value.ToLocalTime().ToString("g");
+            if (playlist.LastRefreshed != null) detail += " · loaded " + TimeText.DateAndTime(playlist.LastRefreshed.Value.ToLocalTime());
             Painters.TwoLineRow(g, bounds, state, Theme.Glyph.List, Theme.Secondary, playlist.Name, detail);
         };
         playlists.Activated += index => EditPlaylist(App.Library.Playlists[index]);
@@ -386,6 +434,13 @@ public sealed class SettingsPage : PageBase
             s.EpgPastDays, value => s.EpgPastDays = value);
         Combo("Days ahead", new[] { ("1 day", 1), ("2 days", 2), ("3 days", 3), ("5 days", 5), ("7 days", 7) },
             s.EpgFutureDays, value => s.EpgFutureDays = value);
+
+        Section("Clock");
+        Combo("Time format", new[] { ("12-hour (4:36 PM)", 0), ("24-hour (16:36)", 1) }, s.TwentyFourHourClock ? 1 : 0, value =>
+        {
+            s.TwentyFourHourClock = value == 1;
+            TimeText.TwentyFourHour = s.TwentyFourHourClock;
+        });
 
         Section("Playback");
         Combo("Buffer", new[] { ("0.5 s (fastest channel change)", 500), ("1 s", 1000), ("1.5 s (recommended)", 1500), ("3 s", 3000), ("5 s", 5000), ("10 s (unstable connections)", 10000) },

@@ -14,8 +14,10 @@ public sealed class Playlist
     public string Server { get; set; } = "";
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
-    /// <summary>Extra XMLTV guide address. Empty means "use whatever the playlist advertises".</summary>
+    /// <summary>Primary XMLTV guide address. Empty means "use whatever the playlist advertises".</summary>
     public string EpgUrl { get; set; } = "";
+    /// <summary>Additional XMLTV guide address, used for channels the primary guide has no schedule for.</summary>
+    public string EpgUrl2 { get; set; } = "";
     public string UserAgent { get; set; } = "";
     public string ServerTimeZone { get; set; } = "";
     public DateTime? LastRefreshed { get; set; }
