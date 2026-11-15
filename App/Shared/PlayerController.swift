@@ -41,8 +41,8 @@ final class PlayerController: ObservableObject {
     @Published private(set) var reconnects = 0
     @Published var muted = false { didSet { applyVolume() } }
 
-    /// The view VLC draws into. It is created once and moved between screens (preview, full screen).
-    let videoView = UIView()
+    /// The view VLC draws into. It is created once and stays inside one surface for its whole life.
+    let videoView = VideoContainerView()
 
     private let settings: AppSettings
     private let player = VLCMediaPlayer()
@@ -306,8 +306,20 @@ final class PlayerController: ObservableObject {
 
 // MARK: - Hosting the video view in SwiftUI
 
-/// Shows a player's picture. Only one surface per player should be on screen at a time; whichever
-/// appears last takes the video view over.
+/// The view handed to VLC. VLC puts its own picture view inside it. That inner view is kept at full size
+/// here instead of being left to autoresizing, which loses track once the container has been empty-sized.
+final class VideoContainerView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        for subview in subviews where subview.frame != bounds {
+            subview.frame = bounds
+        }
+    }
+}
+
+/// Shows a player's picture. Each player must have exactly one surface that stays in the view tree:
+/// moving the video view from one surface to another while it is playing leaves the picture black
+/// on iPad. To show the picture somewhere else, resize and move the one surface (see MainVideoLayer).
 struct PlayerSurface: UIViewRepresentable {
     let controller: PlayerController
 
@@ -329,14 +341,20 @@ final class SurfaceHostView: UIView {
     func host(_ video: UIView) {
         if video.superview !== self {
             video.removeFromSuperview()
-            video.frame = bounds
+            // Never shrink the video view to nothing; it gets its real size in layoutSubviews.
+            if bounds.width > 0 && bounds.height > 0 { video.frame = bounds }
             video.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(video)
+            setNeedsLayout()
         }
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        for subview in subviews { subview.frame = bounds }
+        guard bounds.width > 0 && bounds.height > 0 else { return }
+        for subview in subviews where subview.frame != bounds {
+            subview.frame = bounds
+            subview.setNeedsLayout()
+        }
     }
 }

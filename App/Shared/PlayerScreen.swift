@@ -26,8 +26,8 @@ struct PlayerScreen: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            PlayerSurface(controller: player).ignoresSafeArea()
+            // The picture itself is drawn underneath by MainVideoLayer in RootView.
+            Color.clear.ignoresSafeArea()
             inputLayer
             statusOverlay
 

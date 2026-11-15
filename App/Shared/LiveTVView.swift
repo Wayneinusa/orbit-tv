@@ -185,16 +185,11 @@ struct PreviewPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.pad) {
+            // The picture is not drawn here. This box only marks where the preview goes; MainVideoLayer
+            // in RootView places the one video surface over it.
             ZStack {
                 Color.black
-                if player.item != nil && !router.fullscreen {
-                    PlayerSurface(controller: player)
-                    if player.status == .loading {
-                        ProgressView()
-                    } else if player.status == .failed || player.status == .ended {
-                        Text("This channel is not responding").font(.footnote).foregroundColor(Theme.secondaryText)
-                    }
-                } else {
+                if player.item == nil {
                     VStack(spacing: 8) {
                         Image(systemName: "tv").font(.system(size: Theme.isTV ? 60 : 36))
                         Text("Select a channel to preview").font(.footnote)
@@ -203,6 +198,7 @@ struct PreviewPane: View {
                 }
             }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .anchorPreference(key: PreviewAnchorKey.self, value: .bounds) { $0 }
             .clipShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             .onTapGesture {
                 if player.item != nil { router.fullscreen = true }

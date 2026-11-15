@@ -72,6 +72,9 @@ struct RootView: View {
                 }
                 .opacity(router.fullscreen ? 0 : 1)
                 .disabled(router.fullscreen)
+                .overlayPreferenceValue(PreviewAnchorKey.self) { anchor in
+                    MainVideoLayer(previewAnchor: anchor)
+                }
 
                 if router.fullscreen {
                     PlayerScreen()
@@ -110,6 +113,63 @@ struct RootView: View {
         case .multiview: MultiViewScreen()
         case .search: SearchView()
         case .settings: SettingsView()
+        }
+    }
+}
+
+// MARK: - The main player's picture
+
+/// Reports where the Live TV preview box is, so the video surface can be placed over it.
+struct PreviewAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+/// The one and only surface of the main player. It sits above the sections and below the full-screen
+/// controls, and is resized between the preview box and the whole screen. It is never taken out of the
+/// view tree and the video view is never handed to another surface: doing that mid-playback left the
+/// full-screen picture black on iPad while the sound carried on.
+struct MainVideoLayer: View {
+    @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var player: PlayerController
+    let previewAnchor: Anchor<CGRect>?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let full = router.fullscreen
+            let preview: CGRect? = previewAnchor.map { proxy[$0] }
+            let rect: CGRect = full
+                ? CGRect(origin: .zero, size: proxy.size)
+                : (preview ?? CGRect(x: 0, y: 0, width: 8, height: 8))
+            let visible = player.item != nil && (full || preview != nil)
+
+            ZStack(alignment: .topLeading) {
+                Color.black.opacity(full ? 1 : 0)
+                PlayerSurface(controller: player)
+                    .frame(width: max(8, rect.width), height: max(8, rect.height))
+                    .overlay(previewStatus(full: full))
+                    .clipShape(RoundedRectangle(cornerRadius: full ? 0 : Theme.corner, style: .continuous))
+                    .offset(x: rect.minX, y: rect.minY)
+                    .opacity(visible ? 1 : 0)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    /// Spinner and error text for the preview. Full screen has its own, drawn by PlayerScreen.
+    @ViewBuilder
+    private func previewStatus(full: Bool) -> some View {
+        if !full {
+            if player.status == .loading {
+                ProgressView()
+            } else if player.status == .failed || player.status == .ended {
+                Text("This channel is not responding").font(.footnote).foregroundColor(Theme.secondaryText)
+            }
         }
     }
 }
