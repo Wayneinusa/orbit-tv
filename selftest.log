@@ -1,0 +1,50 @@
+08:17:50.674  Self-test starting. Scale 1, screen {X=0,Y=0,Width=1600,Height=900}, OS Microsoft Windows NT 10.0.26100.0
+08:17:51.360  PASS  Playlist loads
+08:17:51.360  PASS  Channels, movies and series are sorted into their libraries   [12 channels, 6 movies, 2 series]
+08:17:51.390  PASS  Guide loads   [10 channels with listings; Guide updated Mon, Nov 16, 8:17 AM]
+08:17:51.391  PASS  Times are shown in 12-hour format   [8:17 AM]
+08:17:51.393  PASS  A channel missing from the primary guide has no listings at first
+08:17:52.288  PASS  Playlist reloads with an additional guide address
+08:17:52.297  PASS  The additional guide fills in channels the primary guide lacks   [Extra: Open Road]
+08:17:52.297  PASS  Channels in the primary guide keep using it   [Kitchen Table]
+08:17:52.305  PASS  One channel can be switched to the additional guide   [Extra: Kitchen Table]
+08:17:53.028  PASS  A channel's guide can be switched off
+08:17:53.029  PASS  Automatic goes back to the primary guide
+08:17:54.976  PASS  Live channel plays in the preview   [status Playing, time 191 ms]
+08:17:57.269  PASS  Player opens for the live channel
+08:17:57.269  PASS  Speed control is not offered for live channels
+08:17:58.657  PASS  Stream statistics show the resolution and bitrate   [shown: '640×360 · 25 fps · 218 kbps · H264', engine: '640×360 · 25 fps · 218 kbps · H264', 640x360, 218 kbps]
+08:18:07.140  PASS  The mouse pointer hides after a few seconds of watching
+08:18:07.341  PASS  Moving the mouse brings the pointer back
+08:18:08.679  PASS  Channel up switches channel   [Capital News]
+08:19:10.495  PASS  Recording finishes   [Completed, 1538200 bytes, ]
+08:19:10.495  PASS  Recording resumed automatically after the stream dropped   [resumed 21 time(s)]
+08:19:10.495  PASS  Recording was converted to MP4   [mp4 1538200 bytes, ts kept: False]
+08:19:10.495  note  Converter said: source 2131920 bytes, output 1538200 bytes | Error mmdevice: cannot get default device (error 0x80070490) | Error mmdevice: cannot get device identifier (error 0x80070490) | Debug stream_out_standard: using `file/mp4://D:/a/orbit-tv/orbit-tv/windows/selftest-out/recordings/2026-11-16 08-18 Flaky Channel - Self-test recording.mp4' | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning h264: waiting for SPS/PPS | Warning ts: discontinuity received 0x8 instead of 0x6 (pid=256) | Warning ts: discontinuity received 0x3 instead of 0x5 (pid=0) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 3, expected 5) for PID 0 | Warning ts: discontinuity received 0x3 instead of 0x5 (pid=4096) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 3, expected 5) for PID 4096 | Warning ts: discontinuity received 0x1 instead of 0xe (pid=256) | Warning ts: discontinuity received 0x5 instead of 0x7 (pid=257) | Warning ts: discontinuity received 0x7 instead of 0x1 (pid=256) | Warning ts: discontinuity received 0xd instead of 0x5 (pid=257) | Warning ts: discontinuity received 0x3 instead of 0xb (pid=256) | Warning ts: discontinuity received 0x8 instead of 0x2 (pid=257) | Warning ts: discontinuity received 0xe instead of 0x0 (pid=256) | Warning ts: discontinuity received 0xa instead of 0x8 (pid=256) | Warning ts: discontinuity received 0x0 instead of 0x2 (pid=0) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 0, expected 2) for PID 0 | Warning ts: discontinuity received 0x0 instead of 0x2 (pid=4096) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 0, expected 2) for PID 4096 | Warning ts: discontinuity received 0x1 instead of 0xe (pid=256) | Warning ts: discontinuity received 0xb instead of 0xd (pid=0) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 11, expected 13) for PID 0 | Warning ts: discontinuity received 0xb instead of 0xd (pid=4096) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 11, expected 13) for PID 4096 | Warning ts: discontinuity received 0x9 instead of 0x6 (pid=256) | Warning ts: discontinuity received 0xb instead of 0xf (pid=257) | Warning ts: discontinuity received 0x2 instead of 0x7 (pid=256) | Warning ts: discontinuity received 0x6 instead of 0x3 (pid=257) | Warning ts: discontinuity received 0xf instead of 0xd (pid=256) | Warning ts: discontinuity received 0x4 instead of 0x6 (pid=0) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 4, expected 6) for PID 0 | Warning ts: discontinuity received 0x4 instead of 0x6 (pid=4096) | Error ts: libdvbpsi error (PSI decoder): TS discontinuity (received 4, expected 6) for PID 4096 | Warning mp4: i_length <= 0 | Warning ts: discontinuity received 0x5 instead of 0xd (pid=256) | Warning ts: discontinuity received 0x6 instead of 0x0 (pid=257) | Warning ts: discontinuity received 0xe instead of 0x3 (pid=256)
+08:19:11.532  PASS  An uninterrupted .ts capture converts to MP4   [source 3536656 bytes, output 2830080 bytes | Error mmdevice: cannot get default device (error 0x80070490) | Error mmdevice: cannot get device identifier (error 0x80070490) | Debug stream_out_standard: using `file/mp4://D:/a/orbit-tv/orbit-tv/windows/selftest-out/clean capture.mp4' | Warning main: no more input streams for this mux]
+08:19:14.472  PASS  Search finds channels   [3 rows]
+08:19:15.201  PASS  Open category shows the channel's category in Live TV   [screen live, group Sports]
+08:19:18.159  PASS  Movie plays   [status Playing, 156 of 40000 ms]
+08:19:18.159  PASS  Speed control is offered for movies
+08:19:26.260  PASS  4× speed plays faster than real time   [9036 ms of film in 2000 ms]
+08:19:27.113  PASS  Download can be started while the movie is open
+08:19:27.146  PASS  Several movies can be queued together   [5 in the list]
+08:19:28.846  PASS  A download can be paused
+08:19:34.395  PASS  All downloads finish   [Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981, Completed 1440981/1440981]
+08:19:34.395  PASS  Downloads resumed automatically after dropped connections   [4 automatic resume(s)]
+08:19:34.396  PASS  Downloaded files are complete   [1440981, 1440981, 1440981, 1440981, 1440981 (expected 1440981)]
+08:19:36.472  PASS  Downloaded file plays   [status Playing, 154 of 40000 ms]
+08:19:38.987  PASS  8× speed works on a downloaded file   [14848 ms of film in 1500 ms]
+08:19:40.461  PASS  Recording plays   [status Playing, 156 of 57520 ms, file 2026-11-16 08-18 Flaky Channel - Self-test recording.mp4]
+08:19:40.461  PASS  Speed control is offered for recordings
+08:19:49.408  PASS  A subtitle file next to a video is picked up   [2 subtitle track(s)]
+08:20:00.078  PASS  Subtitles are drawn on the picture   [white dots on screen: 9493 at 100%, 1419 at 50%, 0 with subtitles off]
+08:20:00.078  PASS  Subtitle size 50% draws clearly smaller text than 100%   [white dots on screen: 9493 at 100%, 1419 at 50%, 0 with subtitles off]
+08:20:12.984  PASS  Closed captions are drawn on the picture   [caption line 581 dots wide at 100%, 275 at 50%]
+08:20:12.984  PASS  Subtitle size 50% also draws closed captions clearly smaller   [caption line 581 dots wide at 100%, 275 at 50%]
+08:20:14.263  PASS  The custom time pickers keep the chosen start and end   [11/17/2026 8:20 AM to 11/17/2026 9:50 AM]
+08:20:14.270  PASS  A custom start and end time in the future becomes a booking   [11/17/2026 8:20 AM to 11/17/2026 9:50 AM]
+08:20:15.043  PASS  An end time before the start time is refused
+08:20:15.089  PASS  A custom time that has already started records right away   [until 8:23:00 AM]
+08:20:15.819  PASS  More recordings can be scheduled on a channel that is already recording   [2 upcoming programmes, 2 booked, recording: True]
+08:20:19.658  Self-test finished with 0 failure(s).
