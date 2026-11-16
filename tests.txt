@@ -1,0 +1,33 @@
+Total tests: 19
+     Passed: 19
+--- last lines
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 10.0.15)
+[xUnit.net 00:00:00.20]   Discovering: Core.Tests
+[xUnit.net 00:00:00.36]   Discovered:  Core.Tests
+[xUnit.net 00:00:00.36]   Starting:    Core.Tests
+  Passed SuperiorIptv.Tests.ParserTests.ChannelIdsAreStableBetweenRuns [74 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvParsingAndLookup(gzip: True) [75 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvParsingAndLookup(gzip: False) [1 ms]
+  Passed SuperiorIptv.Tests.ParserTests.AdditionalGuideFillsInAndCanBeChosenPerChannel [5 ms]
+  Passed SuperiorIptv.Tests.TransferTests.UnfinishedDownloadContinuesAfterAppRestart [388 ms]
+  Passed SuperiorIptv.Tests.TransferTests.SeveralDownloadsCanBeQueuedAndRemoved [105 ms]
+  Passed SuperiorIptv.Tests.ParserTests.TimesAreWrittenInTwelveHourFormat [355 ms]
+  Passed SuperiorIptv.Tests.ParserTests.HlsPlaylists [6 ms]
+  Passed SuperiorIptv.Tests.ParserTests.ParsesChannelsMoviesAndSeries [6 ms]
+  Passed SuperiorIptv.Tests.ParserTests.XmltvDates [1 ms]
+  Passed SuperiorIptv.Tests.ParserTests.CatchupAddresses [1 ms]
+  Passed SuperiorIptv.Tests.ParserTests.FileNamesAreSafeForWindows [< 1 ms]
+  Passed SuperiorIptv.Tests.TransferTests.DownloadResumesAutomaticallyAfterDroppedConnections [664 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordingAppendsToTheSameFileWhenRestarted [2 s]
+  Passed SuperiorIptv.Tests.TransferTests.PauseAndResumeContinueFromTheSamePlace [410 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordingReconnectsEveryTimeTheStreamStops [4 s]
+[xUnit.net 00:00:08.54]   Finished:    Core.Tests
+  Passed SuperiorIptv.Tests.TransferTests.MissingFileFailsInsteadOfRetryingForever [51 ms]
+  Passed SuperiorIptv.Tests.TransferTests.DownloadStartsOverWhenServerCannotResume [456 ms]
+  Passed SuperiorIptv.Tests.TransferTests.RecordsHlsStreamsSegmentBySegment [8 ms]
+
+Test Run Successful.
+Total tests: 19
+     Passed: 19
+ Total time: 11.5964 Seconds
