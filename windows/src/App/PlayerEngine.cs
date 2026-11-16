@@ -20,8 +20,14 @@ public sealed class TrackOption
 /// </summary>
 public sealed class PlayerEngine : IDisposable
 {
-    private static readonly Dictionary<int, Vlc.LibVLC> Libraries = new();
+    private static readonly Dictionary<string, Vlc.LibVLC> Libraries = new();
     private static readonly object LibraryGate = new();
+
+    /// <summary>
+    /// When not empty, these VLC options are used in place of the subtitle size setting. Only the
+    /// self-test sets this, to measure what each option does to subtitles and captions.
+    /// </summary>
+    public static string[] TestOptions = Array.Empty<string>();
 
     /// <summary>
     /// The shared VLC instance for the current settings (created on first use). The subtitle text size can
@@ -30,15 +36,18 @@ public sealed class PlayerEngine : IDisposable
     public static Vlc.LibVLC Library(Settings settings)
     {
         int scale = Math.Clamp(settings?.SubtitleScale ?? 100, 10, 500);
+        string[] sizeOptions = TestOptions.Length > 0 ? TestOptions : new[] { "--sub-text-scale=" + scale };
+        string key = string.Join(" ", sizeOptions);
         lock (LibraryGate)
         {
-            if (!Libraries.TryGetValue(scale, out Vlc.LibVLC instance))
+            if (!Libraries.TryGetValue(key, out Vlc.LibVLC instance))
             {
                 Vlc.Core.Initialize();
-                var options = new List<string> { "--no-video-title-show", "--no-osd", "--no-snapshot-preview", "--quiet", "--sub-text-scale=" + scale };
+                var options = new List<string> { "--no-video-title-show", "--no-osd", "--no-snapshot-preview", "--quiet" };
+                options.AddRange(sizeOptions);
                 if (settings != null && !settings.HardwareDecoding) options.Add("--avcodec-hw=none");
                 instance = new Vlc.LibVLC(options.ToArray());
-                Libraries[scale] = instance;
+                Libraries[key] = instance;
             }
             return instance;
         }

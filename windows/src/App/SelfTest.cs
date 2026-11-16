@@ -172,6 +172,47 @@ public static class SelfTest
         }
     }
 
+    /// <summary>
+    /// Describes the white text on screen: how many near-white dots, and how many screen rows hold any.
+    /// The row count is a direct measure of how tall the letters are.
+    /// </summary>
+    private static string WhiteText(MainForm form)
+    {
+        try
+        {
+            Rectangle area = form.RectangleToScreen(form.ClientRectangle);
+            using var bitmap = new Bitmap(area.Width, area.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(bitmap)) g.CopyFromScreen(area.Location, Point.Empty, area.Size);
+            System.Drawing.Imaging.BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bytes = new byte[data.Stride * data.Height];
+            System.Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+            bitmap.UnlockBits(data);
+            int count = 0, rows = 0, top = -1, bottom = -1, left = int.MaxValue, right = -1;
+            for (int y = 0; y < data.Height; y++)
+            {
+                int offset = y * data.Stride, inRow = 0;
+                for (int x = 0; x < data.Width; x++, offset += 4)
+                {
+                    if (bytes[offset] < 232 || bytes[offset + 1] < 232 || bytes[offset + 2] < 232) continue;
+                    inRow++;
+                    if (x < left) left = x;
+                    if (x > right) right = x;
+                }
+                if (inRow == 0) continue;
+                count += inRow;
+                rows++;
+                if (top < 0) top = y;
+                bottom = y;
+            }
+            return count == 0 ? "no white text" : $"{count} dots, {rows} rows tall, box {right - left + 1}x{bottom - top + 1} at y {top}";
+        }
+        catch (Exception ex)
+        {
+            return "screen not readable: " + ex.Message;
+        }
+    }
+
     private static async Task<bool> Wait(Func<bool> condition, double seconds)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
@@ -445,6 +486,65 @@ public static class SelfTest
             Check("Subtitle size 50% draws clearly smaller text than 100%", textHalf > 60 && textNormal >= 2 * textHalf, measured);
         }
         app.Settings.SubtitleScale = 100;
+
+        // 7c. Measurements: what each VLC text-size option does to subtitles and to the two kinds of
+        // closed captions US channels carry. The results decide how the subtitle size setting is applied.
+        string captions = Path.Combine(server.SamplesFolder, "captions.ts");
+        if (File.Exists(captions))
+        {
+            var optionSets = new (string Label, string[] Options)[]
+            {
+                ("normal", new[] { "--sub-text-scale=100" }),
+                ("sub-text-scale=50", new[] { "--sub-text-scale=50" }),
+                ("freetype-rel-fontsize=32", new[] { "--freetype-rel-fontsize=32" }),
+                ("freetype-fontsize=14", new[] { "--freetype-fontsize=14" })
+            };
+            var clips = new (string Label, string File, string Track)[]
+            {
+                ("subtitle file", subtitled, null),
+                ("608 captions", captions, "Closed captions 1"),
+                ("708 captions", captions, "DTVCC")
+            };
+            int probe = 0;
+            foreach (var (optionLabel, options) in optionSets)
+            {
+                PlayerEngine.TestOptions = options;
+                foreach (var (clipLabel, file, track) in clips)
+                {
+                    probe++;
+                    try
+                    {
+                        player.Play(new PlayableItem { Id = "selftest:probe" + probe, Kind = PlayKind.Download, Title = clipLabel, Url = file });
+                        await Task.Delay(600);
+                        await Wait(() => player.Status == PlayerStatus.Playing && player.TimeMs > 300, 15);
+                        await Wait(() => player.SubtitleTracks.Count > 0, 6);
+                        string names = string.Join(" / ", player.SubtitleTracks.Select(t => t.Id + ":" + t.Name));
+                        string picked = "automatic";
+                        if (track != null)
+                        {
+                            TrackOption wanted = player.SubtitleTracks.FirstOrDefault(t => t.Name.Contains(track, StringComparison.OrdinalIgnoreCase) && (track != "Closed captions 1" || !t.Name.Contains("DTVCC", StringComparison.OrdinalIgnoreCase)));
+                            if (wanted != null)
+                            {
+                                player.SelectSubtitle(wanted.Id);
+                                picked = wanted.Name;
+                            }
+                            else
+                            {
+                                picked = "TRACK NOT FOUND";
+                            }
+                        }
+                        await Task.Delay(4000);
+                        Log($"probe {optionLabel,-26} {clipLabel,-14} track [{picked}] -> {WhiteText(form)}   (tracks: {names})");
+                        if (optionLabel == "normal" || clipLabel != "subtitle file") await Shot(form, $"probe-{probe:00}", true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"probe {optionLabel} {clipLabel} failed: {ex.Message}");
+                    }
+                }
+            }
+            PlayerEngine.TestOptions = Array.Empty<string>();
+        }
         form.ClosePlayer();
         await Task.Delay(500);
 
