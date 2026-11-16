@@ -51,21 +51,27 @@ public sealed class LivePage : PageBase
     {
         Recording active = app.Recordings.ActiveFor(channel.Id);
         string favoriteText = app.Library.IsFavorite(channel) ? "Remove from Favorites" : "Add to Favorites";
-        string recordText = active != null ? "Stop recording" : "Record…";
-        Action recordAction = () =>
-        {
-            if (active != null) app.Recordings.Stop(active.Id);
-            else Sheets.Record(owner, app, channel);
-        };
         var entries = new List<(string, Action)>
         {
             ("Watch full screen", () => app.Watch(channel)),
             (favoriteText, () => app.Library.ToggleFavorite(channel)),
-            ("-", null),
-            (recordText, recordAction),
+            ("-", null)
+        };
+        if (active != null)
+        {
+            // Already recording: it can be stopped, and more recordings of the same channel can be booked.
+            entries.Add(("Stop recording", () => app.Recordings.Stop(active.Id)));
+            entries.Add(("Schedule another recording…", () => Sheets.Record(owner, app, channel)));
+        }
+        else
+        {
+            entries.Add(("Record…", () => Sheets.Record(owner, app, channel)));
+        }
+        entries.AddRange(new (string, Action)[]
+        {
             ("-", null),
             ("Guide source…", () => Sheets.GuideSource(owner, app, channel))
-        };
+        });
         if (!string.IsNullOrEmpty(channel.Group)) entries.Add(("Open category: " + channel.Group, () => app.OpenCategory(channel)));
         Painters.ShowMenu(owner, screen, entries.ToArray());
     }
@@ -210,11 +216,9 @@ public sealed class LivePage : PageBase
             });
             record = new FlatButton("Record", Theme.Glyph.Record, (_, _) =>
             {
+                // While recording, the same sheet offers to stop it or to schedule more.
                 Channel channel = app.Player.Item?.Channel;
-                if (channel == null) return;
-                Recording active = app.Recordings.ActiveFor(channel.Id);
-                if (active != null) app.Recordings.Stop(active.Id);
-                else Sheets.Record(this, app, channel);
+                if (channel != null) Sheets.Record(this, app, channel);
             }) { GlyphColor = Theme.Live };
             Controls.AddRange(new Control[] { full, favorite, record });
         }
@@ -276,8 +280,8 @@ public sealed class LivePage : PageBase
             favorite.Glyph = isFavorite ? Theme.Glyph.StarFilled : Theme.Glyph.Star;
             favorite.Selected = isFavorite;
             bool recording = app.Recordings.ActiveFor(channel.Id) != null;
-            record.Caption = recording ? "Stop rec." : "Record";
-            record.Glyph = recording ? Theme.Glyph.Stop : Theme.Glyph.Record;
+            record.Caption = recording ? "Recording…" : "Record";
+            record.Selected = recording;
 
             DateTime now = DateTime.UtcNow;
             Rectangle details = Details;

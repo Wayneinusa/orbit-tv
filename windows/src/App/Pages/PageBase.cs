@@ -68,34 +68,76 @@ public abstract class PageBase : Control
 /// <summary>Dialogs that several screens open.</summary>
 public static class Sheets
 {
-    /// <summary>"Record…" options for a channel.</summary>
+    /// <summary>
+    /// "Record…" options for a channel. While the channel is already being recorded the sheet stays
+    /// available: it then offers to stop that recording or to schedule further ones.
+    /// </summary>
     public static void Record(IWin32Window owner, AppServices app, Channel channel)
+    {
+        using ActionDialog dialog = RecordDialog(owner, app, channel);
+        dialog.ShowDialog(owner);
+    }
+
+    public static ActionDialog RecordDialog(IWin32Window owner, AppServices app, Channel channel)
     {
         DateTime now = DateTime.UtcNow;
         Programme current = app.Library.Epg.Current(channel, now);
-        string note = "If the stream drops, recording reconnects and carries on by itself until the end time. "
-                      + (app.Settings.AutoConvertMp4 ? "The file is converted to MP4 when it finishes." : "The file is saved as .ts; convert it to MP4 from Recordings.");
+        Recording active = app.Recordings.ActiveFor(channel.Id);
+        List<Recording> booked = app.Recordings.ScheduledFor(channel.Id);
+        string note = active != null
+            ? $"This channel is being recorded until {Theme.Time(active.End)}. You can schedule more recordings of it; each one is saved as its own file."
+            : "If the stream drops, recording reconnects and carries on by itself until the end time. "
+              + (app.Settings.AutoConvertMp4 ? "The file is converted to MP4 when it finishes." : "The file is saved as .ts; convert it to MP4 from Recordings.");
         var dialog = new ActionDialog("Record " + channel.Name, "", note);
-        if (current != null)
+
+        if (active != null)
         {
-            DateTime end = current.Stop.AddMinutes(app.Settings.PadAfterMinutes);
-            dialog.AddAction($"This programme: {current.Title} (until {Theme.Time(current.Stop)})", Theme.Glyph.Record,
-                () => app.RecordNow(channel, current.Title, end), Theme.Live);
+            dialog.AddAction($"Stop the recording in progress ({active.Title})", Theme.Glyph.Stop, () => app.Recordings.Stop(active.Id), Theme.Live);
         }
-        foreach (int minutes in new[] { 30, 60, 120, 180, 240 })
+        else
         {
-            string label = minutes < 60 ? $"{minutes} minutes" : minutes == 60 ? "1 hour" : $"{minutes / 60} hours";
-            int captured = minutes;
-            dialog.AddAction($"{label} (until {Theme.Time(now.AddMinutes(minutes))})", Theme.Glyph.Record,
-                () => app.RecordNow(channel, current?.Title ?? channel.Name, DateTime.UtcNow.AddMinutes(captured)), Theme.Live);
+            if (current != null)
+            {
+                DateTime end = current.Stop.AddMinutes(app.Settings.PadAfterMinutes);
+                dialog.AddAction($"This programme: {current.Title} (until {Theme.Time(current.Stop)})", Theme.Glyph.Record,
+                    () => app.RecordNow(channel, current.Title, end), Theme.Live);
+            }
+            foreach (int minutes in new[] { 30, 60, 120, 180, 240 })
+            {
+                string label = minutes < 60 ? $"{minutes} minutes" : minutes == 60 ? "1 hour" : $"{minutes / 60} hours";
+                int captured = minutes;
+                dialog.AddAction($"{label} (until {Theme.Time(now.AddMinutes(minutes))})", Theme.Glyph.Record,
+                    () => app.RecordNow(channel, current?.Title ?? channel.Name, DateTime.UtcNow.AddMinutes(captured)), Theme.Live);
+            }
         }
-        dialog.AddAction("Custom time: choose when it starts and ends…", Theme.Glyph.Clock, () =>
+
+        // Coming up on this channel: one click books a programme. Any number can be booked.
+        int offered = 0;
+        foreach (Programme programme in app.Library.Epg.Upcoming(channel, now, 8))
         {
-            using var custom = new RecordTimeDialog(app, channel, current);
+            if (offered >= (active != null ? 5 : 3)) break;
+            if (app.Recordings.IsScheduled(channel.Id, programme.Start)) continue;
+            Programme upcoming = programme;
+            dialog.AddAction($"Schedule: {programme.Title} ({TimeText.DayTime(programme.Start.ToLocalTime())} – {Theme.Time(programme.Stop)})", Theme.Glyph.Clock, () =>
+            {
+                app.Recordings.Schedule(channel, upcoming, app.Library.UserAgentFor(channel.PlaylistId, channel));
+                app.Toast("Recording scheduled: " + upcoming.Title);
+            });
+            offered++;
+        }
+        dialog.AddAction(active != null ? "Schedule at a custom time: choose when it starts and ends…" : "Custom time: choose when it starts and ends…", Theme.Glyph.Clock, () =>
+        {
+            using var custom = new RecordTimeDialog(app, channel, active != null ? null : current);
             custom.ShowDialog(owner);
         });
+
+        if (booked.Count > 0)
+        {
+            string list = string.Join("; ", booked.Take(4).Select(r => $"{r.Title}, {TimeText.DayTime(r.Start.ToLocalTime())} – {Theme.Time(r.End)}"));
+            dialog.AddNote($"Already scheduled on this channel ({booked.Count}): {list}{(booked.Count > 4 ? "; …" : "")}. Bookings can be cancelled in Recordings.", Theme.Good);
+        }
         dialog.AddClose("Cancel");
-        using (dialog) dialog.ShowDialog(owner);
+        return dialog;
     }
 
     /// <summary>Lets the viewer choose which guide source one channel takes its listings from.</summary>

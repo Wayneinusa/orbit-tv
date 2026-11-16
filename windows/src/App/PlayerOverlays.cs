@@ -33,11 +33,9 @@ public sealed class PlayerBar : Control
         });
         record = Make("Record", Theme.Glyph.Record, () =>
         {
+            // While recording, the same sheet offers to stop it or to schedule more.
             Channel channel = Player.Item?.Channel;
-            if (channel == null) return;
-            Recording active = App.Recordings.ActiveFor(channel.Id);
-            if (active != null) App.Recordings.Stop(active.Id);
-            else Sheets.Record(form, App, channel);
+            if (channel != null) Sheets.Record(form, App, channel);
         });
         record.GlyphColor = Theme.Live;
         rewind = Make("-10 s", Theme.Glyph.Rewind, () => Player.SeekBy(-10));
@@ -146,8 +144,8 @@ public sealed class PlayerBar : Control
             favorite.Glyph = isFavorite ? Theme.Glyph.StarFilled : Theme.Glyph.Star;
             favorite.Selected = isFavorite;
             bool recording = App.Recordings.ActiveFor(item.Channel.Id) != null;
-            record.Caption = recording ? "Stop rec." : "Record";
-            record.Glyph = recording ? Theme.Glyph.Stop : Theme.Glyph.Record;
+            record.Caption = recording ? "Recording…" : "Record";
+            record.Selected = recording;
         }
         else
         {
@@ -216,6 +214,24 @@ public sealed class PlayerBar : Control
             else Player.SelectSubtitle(track.Id);
         }))).ToArray();
         if (entries.Length == 0) return;
+        if (!forAudio)
+        {
+            // Text size, applied straight away by starting the stream again at the same place.
+            var withSizes = entries.ToList();
+            withSizes.Add(("-", null));
+            foreach (int percent in Settings.SubtitleScales)
+            {
+                int chosen = percent;
+                withSizes.Add(($"Text size {percent}%" + (percent == 100 ? " (normal)" : "") + (percent == App.Settings.SubtitleScale ? "   ✓" : ""), () =>
+                {
+                    App.Settings.SubtitleScale = chosen;
+                    App.Settings.Save();
+                    Player.Reload();
+                    App.Toast($"Subtitle size {chosen}%");
+                }));
+            }
+            entries = withSizes.ToArray();
+        }
         FlatButton anchor = forAudio ? audio : subtitles;
         Painters.ShowMenu(form, anchor.PointToScreen(new Point(0, -Theme.S(8) - entries.Length * Theme.S(26))), entries);
     }

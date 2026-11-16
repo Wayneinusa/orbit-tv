@@ -20,22 +20,27 @@ public sealed class TrackOption
 /// </summary>
 public sealed class PlayerEngine : IDisposable
 {
-    private static Vlc.LibVLC library;
+    private static readonly Dictionary<int, Vlc.LibVLC> Libraries = new();
     private static readonly object LibraryGate = new();
 
-    /// <summary>The shared VLC instance (created on first use).</summary>
+    /// <summary>
+    /// The shared VLC instance for the current settings (created on first use). The subtitle text size can
+    /// only be given to VLC when an instance is created, so there is one instance per size that was used.
+    /// </summary>
     public static Vlc.LibVLC Library(Settings settings)
     {
+        int scale = Math.Clamp(settings?.SubtitleScale ?? 100, 10, 500);
         lock (LibraryGate)
         {
-            if (library == null)
+            if (!Libraries.TryGetValue(scale, out Vlc.LibVLC instance))
             {
                 Vlc.Core.Initialize();
-                var options = new List<string> { "--no-video-title-show", "--no-osd", "--no-snapshot-preview", "--quiet" };
+                var options = new List<string> { "--no-video-title-show", "--no-osd", "--no-snapshot-preview", "--quiet", "--sub-text-scale=" + scale };
                 if (settings != null && !settings.HardwareDecoding) options.Add("--avcodec-hw=none");
-                library = new Vlc.LibVLC(options.ToArray());
+                instance = new Vlc.LibVLC(options.ToArray());
+                Libraries[scale] = instance;
             }
-            return library;
+            return instance;
         }
     }
 
@@ -43,10 +48,13 @@ public sealed class PlayerEngine : IDisposable
 
     private readonly Settings settings;
     private readonly ResumeStore resume;
-    private readonly Vlc.MediaPlayer player;
+    // Replaced (on the window's thread) when a setting that VLC only reads at start-up has changed.
+    private volatile Vlc.MediaPlayer player;
+    private Vlc.LibVLC library;
     private readonly BlockingCollection<Action> commands = new();
     private readonly Thread worker;
     private Control surface;
+    private IntPtr surfaceHandle;
 
     private bool userStopped = true;
     private long lastTime = -1;
@@ -84,15 +92,42 @@ public sealed class PlayerEngine : IDisposable
     {
         this.settings = settings;
         this.resume = resume;
-        player = new Vlc.MediaPlayer(Library(settings))
-        {
-            // Let the window receive mouse and keyboard input instead of VLC's own video window.
-            EnableMouseInput = false,
-            EnableKeyInput = false
-        };
+        library = Library(settings);
+        player = NewPlayer(library);
         volume = settings?.Volume ?? 100;
         worker = new Thread(Work) { IsBackground = true, Name = "player" };
         worker.Start();
+    }
+
+    private static Vlc.MediaPlayer NewPlayer(Vlc.LibVLC instance) => new(instance)
+    {
+        // Let the window receive mouse and keyboard input instead of VLC's own video window.
+        EnableMouseInput = false,
+        EnableKeyInput = false
+    };
+
+    /// <summary>Moves to the VLC instance that matches the current settings, if that is a different one.</summary>
+    private void UseCurrentLibrary()
+    {
+        Vlc.LibVLC wanted = Library(settings);
+        if (ReferenceEquals(wanted, library)) return;
+        Vlc.MediaPlayer old = player;
+        library = wanted;
+        player = NewPlayer(wanted);
+        IntPtr handle = surfaceHandle;
+        // The old player is let go on the worker thread, after any command that may still be using it.
+        Enqueue(() =>
+        {
+            try
+            {
+                old.Stop();
+            }
+            catch (Exception)
+            {
+            }
+            old.Dispose();
+            if (handle != IntPtr.Zero) player.Hwnd = handle;
+        });
     }
 
     private void Enqueue(Action command)
@@ -127,6 +162,7 @@ public sealed class PlayerEngine : IDisposable
     {
         surface = control;
         IntPtr handle = control.Handle;
+        surfaceHandle = handle;
         Enqueue(() => player.Hwnd = handle);
     }
 
@@ -186,6 +222,8 @@ public sealed class PlayerEngine : IDisposable
     {
         PlayableItem item = Item;
         if (item == null) return;
+        UseCurrentLibrary();
+        Vlc.LibVLC instance = library;
         Status = PlayerStatus.Loading;
         TimeMs = 0;
         DurationMs = 0;
@@ -205,8 +243,8 @@ public sealed class PlayerEngine : IDisposable
         Enqueue(() =>
         {
             Vlc.Media media = item.IsLocalFile
-                ? new Vlc.Media(Library(settings), item.Url, Vlc.FromType.FromPath)
-                : new Vlc.Media(Library(settings), item.Url, Vlc.FromType.FromLocation);
+                ? new Vlc.Media(instance, item.Url, Vlc.FromType.FromPath)
+                : new Vlc.Media(instance, item.Url, Vlc.FromType.FromLocation);
             using (media)
             {
                 if (item.IsLocalFile)
@@ -226,6 +264,19 @@ public sealed class PlayerEngine : IDisposable
             player.AspectRatio = aspect;
             player.SetRate(1f);
         });
+    }
+
+    /// <summary>
+    /// Starts what is playing again, at the place it had reached, so that a changed setting (such as the
+    /// subtitle size) takes effect straight away.
+    /// </summary>
+    public void Reload()
+    {
+        PlayableItem item = Item;
+        if (item == null) return;
+        if (!item.IsLive && TimeMs > 0) pendingSeek = TimeMs;
+        Rate = 1f;
+        StartCurrent();
     }
 
     public void Stop()

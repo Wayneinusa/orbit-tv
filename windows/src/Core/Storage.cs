@@ -159,6 +159,10 @@ public sealed class Settings
     public bool TwentyFourHourClock { get; set; } = false;
     /// <summary>Whether the small stream statistics line is shown in the player.</summary>
     public bool ShowStreamStats { get; set; } = false;
+    /// <summary>Subtitle text size in percent of the VLC engine's normal size.</summary>
+    public int SubtitleScale { get; set; } = 100;
+
+    public static readonly int[] SubtitleScales = { 40, 50, 60, 75, 100, 125, 150 };
 
     [JsonIgnore]
     public string EffectiveRecordingsFolder => string.IsNullOrWhiteSpace(RecordingsFolder) ? Storage.DefaultMediaFolder("Recordings") : RecordingsFolder;

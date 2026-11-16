@@ -449,6 +449,9 @@ public sealed class SettingsPage : PageBase
             s.LiveFormat == "m3u8" ? 1 : 0, value => s.LiveFormat = value == 1 ? "m3u8" : "ts");
         Check("Reconnect automatically when a channel freezes", s.AutoReconnect, value => s.AutoReconnect = value);
         Check("Use hardware video decoding (takes effect after restarting the app)", s.HardwareDecoding, value => s.HardwareDecoding = value);
+        Combo("Subtitle size", Settings.SubtitleScales.Select(percent => (percent == 100 ? "100% (normal)" : percent + "%", percent)).ToArray(),
+            s.SubtitleScale, value => s.SubtitleScale = value);
+        Note("Subtitle size applies to text subtitles, from the next thing you play. It can also be changed while watching, under Subtitles in the player. Closed captions that are built into some channels, and subtitles sent as pictures, keep the size the channel gives them.");
         TextRow("User-Agent (optional)", s.UserAgent, value => s.UserAgent = value);
         Note("Playback speed (0.5× to 16×) is on the player's control bar for movies, episodes, catch-up, recordings and downloads. Keys: ] faster, [ slower, \\ normal.");
 

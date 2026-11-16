@@ -123,6 +123,16 @@ public sealed class RecordingManager : IDisposable
         }
     }
 
+    /// <summary>Bookings for a channel that have not started yet, earliest first.</summary>
+    public List<Recording> ScheduledFor(string channelId)
+    {
+        lock (gate)
+        {
+            return recordings.Where(r => r.ChannelId == channelId && r.Status == RecordingStatus.Scheduled)
+                .OrderBy(r => r.Start).Select(r => r.Clone()).ToList();
+        }
+    }
+
     // ---- Creating recordings
 
     private string NewBasePath(string title, string channel, DateTime startUtc)

@@ -76,7 +76,7 @@ public sealed class ActionDialog : DarkForm
             BackColor = Theme.Background,
             Font = Theme.Ui(9f),
             AutoSize = false,
-            Height = Theme.S(text.Length > 90 ? 58 : text.Length > 45 ? 40 : 24)
+            Height = Theme.S(19 * Math.Max(1, (int)Math.Ceiling(text.Length / 70.0)) + 6)
         });
         return this;
     }

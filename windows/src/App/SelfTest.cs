@@ -137,6 +137,41 @@ public static class SelfTest
         }
     }
 
+    /// <summary>
+    /// Counts the near-white dots in the lower half of the window as it really appears on screen.
+    /// Subtitles are white, so this number tells whether they are drawn and roughly how large.
+    /// </summary>
+    private static int WhitePixels(MainForm form)
+    {
+        try
+        {
+            Rectangle client = form.RectangleToScreen(form.ClientRectangle);
+            var area = new Rectangle(client.X, client.Y + client.Height / 2, client.Width, client.Height / 2);
+            using var bitmap = new Bitmap(area.Width, area.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(bitmap)) g.CopyFromScreen(area.Location, Point.Empty, area.Size);
+            System.Drawing.Imaging.BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            var bytes = new byte[data.Stride * data.Height];
+            System.Runtime.InteropServices.Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+            bitmap.UnlockBits(data);
+            int count = 0;
+            for (int y = 0; y < data.Height; y++)
+            {
+                int offset = y * data.Stride;
+                for (int x = 0; x < data.Width; x++, offset += 4)
+                {
+                    if (bytes[offset] >= 232 && bytes[offset + 1] >= 232 && bytes[offset + 2] >= 232) count++;
+                }
+            }
+            return count;
+        }
+        catch (Exception ex)
+        {
+            Log("note  Could not read the screen: " + ex.Message);
+            return -1;
+        }
+    }
+
     private static async Task<bool> Wait(Func<bool> condition, double seconds)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(seconds);
@@ -375,6 +410,44 @@ public static class SelfTest
             form.ClosePlayer();
         }
 
+        // 7b. Subtitle size: the same clip with a subtitle file next to it, at 100% and at 50%
+        string subtitled = Path.Combine(outDir, "subtitle test.mp4");
+        File.Copy(Path.Combine(server.SamplesFolder, "sample.mp4"), subtitled, true);
+        File.WriteAllText(Path.ChangeExtension(subtitled, ".srt"), "1\r\n00:00:00,000 --> 00:00:39,000\r\nSUBTITLE SIZE TEST\r\n0123456789 ABCDEFGHIJ\r\n");
+        var subtitleItem = new PlayableItem { Id = "selftest:subtitles", Kind = PlayKind.Download, Title = "Subtitle test", Url = subtitled };
+        async Task<int> MeasureSubtitles(int percent, string picture)
+        {
+            app.Settings.SubtitleScale = percent;
+            if (player.Item == null) app.PlayItem(subtitleItem);
+            else player.Reload();
+            await Task.Delay(800);
+            await Wait(() => player.Status == PlayerStatus.Playing && player.TimeMs > 300, 20);
+            await Task.Delay(6500);     // the controls and the banner fade away
+            int white = WhitePixels(form);
+            await Shot(form, picture, true);
+            return white;
+        }
+        int whiteNormal = await MeasureSubtitles(100, "subtitles-100");
+        Check("A subtitle file next to a video is picked up", player.SubtitleTracks.Count > 0, player.SubtitleTracks.Count + " subtitle track(s)");
+        int whiteHalf = await MeasureSubtitles(50, "subtitles-50");
+        player.SelectSubtitle(-1);
+        await Task.Delay(2500);
+        int whiteNone = WhitePixels(form);
+        int textNormal = whiteNormal - whiteNone, textHalf = whiteHalf - whiteNone;
+        string measured = $"white dots on screen: {whiteNormal} at 100%, {whiteHalf} at 50%, {whiteNone} with subtitles off";
+        if (whiteNormal < 0 || whiteHalf < 0 || whiteNone < 0)
+        {
+            Log("note  The screen could not be read on this machine, so the subtitle size check was skipped.");
+        }
+        else
+        {
+            Check("Subtitles are drawn on the picture", textNormal > 300, measured);
+            Check("Subtitle size 50% draws clearly smaller text than 100%", textHalf > 60 && textNormal >= 2 * textHalf, measured);
+        }
+        app.Settings.SubtitleScale = 100;
+        form.ClosePlayer();
+        await Task.Delay(500);
+
         // 8. Recording at a custom time
         Channel custom = library.Channels[2];
         DateTime clockNow = DateTime.Now;
@@ -412,6 +485,19 @@ public static class SelfTest
             nowRecording == null ? "not recording" : $"until {nowRecording.End.ToLocalTime():T}");
         if (nowRecording != null)
         {
+            // 8b. While that channel is recording, more recordings of it can be booked
+            // Programmes that start a little later, so that neither begins during the check.
+            List<Programme> coming = library.Epg.Upcoming(custom, DateTime.UtcNow.AddMinutes(5), 2);
+            foreach (Programme programme in coming) app.Recordings.Schedule(custom, programme, "");
+            await ShotOf(Sheets.RecordDialog(form, app, custom), form, "record-while-recording");
+            foreach (Form open in Application.OpenForms.OfType<ActionDialog>().ToList()) open.Close();
+            Check("More recordings can be scheduled on a channel that is already recording",
+                coming.Count == 2 && app.Recordings.ScheduledFor(custom.Id).Count == 2 && app.Recordings.ActiveFor(custom.Id) != null,
+                $"{coming.Count} upcoming programmes, {app.Recordings.ScheduledFor(custom.Id).Count} booked, recording: {app.Recordings.ActiveFor(custom.Id) != null}");
+            form.GoTo("recordings");
+            await Shot(form, "recordings-several");
+            foreach (Recording extra in app.Recordings.ScheduledFor(custom.Id)) app.Recordings.Delete(extra.Id);
+
             app.Recordings.Stop(nowRecording.Id);
             await Wait(() => app.Recordings.ActiveFor(custom.Id) == null, 15);
             // Do not leave this one converting in the background while the app closes.
