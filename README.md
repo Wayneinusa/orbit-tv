@@ -15,7 +15,7 @@ The Windows version lives in the `windows/` folder and has its own README there.
 | Area | What it does |
 | --- | --- |
 | Playlists | M3U address or Xtream Codes login, several playlists at once, automatic reload, custom User-Agent |
-| Live TV | Groups, channel list with current programme and progress, preview pane, favorites, recent channels, hidden groups |
+| Live TV | iPad: groups on the left, preview with programme details on top, and below it the channels with their programme timeline. Apple TV: groups, channel list with current programme, preview pane. Favorites, recent channels, hidden groups |
 | Player | VLC engine (plays MPEG-TS and HLS), automatic reconnect when a channel freezes, audio and subtitle tracks, aspect ratio, channel list overlay, channel up/down |
 | TV guide | XMLTV (plain or gzip), timeline grid, programme details, guide search |
 | Catch-up | Xtream timeshift, `catchup="shift"`, `append`, `default` templates and Flussonic |
@@ -23,6 +23,8 @@ The Windows version lives in the `windows/` folder and has its own README there.
 | Recording | Record now, record a programme, schedule from the guide, automatic resume, MP4 conversion |
 | Multi-view | Two or four channels at once, sound follows the selected tile |
 | Search | Channels, movies, series and upcoming programmes in one box |
+| Subtitles | Text size from 40% to 150% in Settings (subtitles and the closed captions built into channels; subtitles sent as pictures keep their own size) |
+| AirPlay (iPad) | With Screen Mirroring on, the picture fills the TV and the iPad keeps the controls |
 
 ### How recording works
 
@@ -77,6 +79,7 @@ Add a playlist on first launch: either an Xtream Codes login (server, username, 
 
 ## Limits that come from Apple, not from the app
 
+- **AirPlay works through Screen Mirroring.** Apple only hands a video over to an Apple TV from its own player, which cannot play most IPTV streams. So on the iPad you open Control Centre, tap Screen Mirroring and choose the Apple TV; the app then draws the picture on the TV at full size. This can be switched off in Settings › AirPlay.
 - **Recording only runs while the app is open.** iPadOS and tvOS suspend apps shortly after they leave the screen. A scheduled recording starts on time only if Superior IPTV Player is open; a recording that was interrupted this way resumes when you come back. The screen is kept awake while a recording is running.
 - **Apple TV has no permanent app storage.** Recordings on Apple TV are kept in the app's cache, which tvOS may clear when it runs low on space, and there is no way to copy them off the device. For recordings you want to keep, use the iPad.
 - **Each multi-view tile uses one connection** from your provider. Many subscriptions allow only one or two at a time.

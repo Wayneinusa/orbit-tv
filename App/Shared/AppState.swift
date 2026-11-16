@@ -19,6 +19,12 @@ final class AppSettings: ObservableObject {
     @Published var padAfterMinutes: Int { didSet { save(padAfterMinutes, "padAfterMinutes") } }
     @Published var defaultRecordMinutes: Int { didSet { save(defaultRecordMinutes, "defaultRecordMinutes") } }
     @Published var hiddenGroups: [String] { didSet { save(hiddenGroups, "hiddenGroups") } }
+    /// Subtitle text size in percent of the VLC engine's normal size.
+    @Published var subtitleScale: Int { didSet { save(subtitleScale, "subtitleScale") } }
+    /// iPad: draw the picture on the TV at full size while Screen Mirroring is on.
+    @Published var airPlayFullScreen: Bool { didSet { save(airPlayFullScreen, "airPlayFullScreen") } }
+
+    static let subtitleScales = [40, 50, 60, 75, 100, 125, 150]
 
     init() {
         let defaults = UserDefaults.standard
@@ -36,6 +42,8 @@ final class AppSettings: ObservableObject {
         padAfterMinutes = defaults.object(forKey: "padAfterMinutes") as? Int ?? 5
         defaultRecordMinutes = defaults.object(forKey: "defaultRecordMinutes") as? Int ?? 120
         hiddenGroups = defaults.stringArray(forKey: "hiddenGroups") ?? []
+        subtitleScale = defaults.object(forKey: "subtitleScale") as? Int ?? 100
+        airPlayFullScreen = defaults.object(forKey: "airPlayFullScreen") as? Bool ?? true
     }
 
     private func save(_ value: Any, _ key: String) {

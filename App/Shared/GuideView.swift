@@ -133,6 +133,10 @@ struct GuideRow: View {
     let now: Date
     let onChannel: () -> Void
     let onProgramme: (Programme) -> Void
+    /// Width of the channel column. Live TV on the iPad passes a narrower one than the Guide screen uses.
+    var channelWidth: CGFloat = Theme.guideChannelWidth
+    var isPlaying = false
+    var isFavorite = false
 
     private struct Cell: Identifiable {
         let programme: Programme
@@ -154,11 +158,18 @@ struct GuideRow: View {
                     ChannelLogo(channel: channel, size: Theme.logoSize * 0.8)
                     Text(channel.name).font(.caption.weight(.semibold)).lineLimit(2)
                     Spacer(minLength: 0)
+                    if recordings.activeRecording(channelID: channel.id) != nil {
+                        Circle().fill(Theme.live).frame(width: 8, height: 8)
+                    } else if isPlaying {
+                        Image(systemName: "play.fill").font(.caption2)
+                    } else if isFavorite {
+                        Image(systemName: "star.fill").font(.caption2).foregroundColor(.yellow)
+                    }
                 }
                 .padding(.horizontal, 6)
-                .frame(width: Theme.guideChannelWidth, height: rowHeight)
+                .frame(width: channelWidth, height: rowHeight)
             }
-            .buttonStyle(TileButtonStyle(fill: Theme.panel))
+            .buttonStyle(TileButtonStyle(selected: isPlaying, fill: Theme.panel))
 
             GeometryReader { geometry in
                 let cells = layout(width: geometry.size.width)

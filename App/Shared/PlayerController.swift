@@ -94,6 +94,7 @@ final class PlayerController: ObservableObject {
         if !item.userAgent.isEmpty { media.addOption(":http-user-agent=\(item.userAgent)") }
 
         player.media = media
+        applySubtitleSize()
         player.play()
 
         status = .loading
@@ -107,6 +108,27 @@ final class PlayerController: ObservableObject {
         applyVolume()
         applyAspect()
         ensureTimer()
+    }
+
+    /// Starts the current item again from where it is. Used after the picture moved to another screen,
+    /// because VLC only reliably draws into a view it was started in.
+    func restart() {
+        guard let item = item, !userStopped else { return }
+        if !item.isLive && timeMs > 0 { pendingSeekMs = timeMs }
+        start()
+    }
+
+    /// Applies Settings › Subtitle size. VLC measures subtitle text as "one line is 1/N of the picture
+    /// height", with 16 as its normal size, so a larger number gives smaller text. The size is forced on
+    /// all text, which on Windows was measured to include the closed captions of US channels (CEA-608).
+    func applySubtitleSize() {
+        let percent = max(25, min(300, settings.subtitleScale))
+        let relative = max(4, Int((1600.0 / Double(percent)).rounded()))
+        // VLCKit has this call but does not list it in its public headers; VLC's own iOS app uses it the same way.
+        let selector = NSSelectorFromString("setTextRendererFontSize:")
+        if player.responds(to: selector) {
+            _ = player.perform(selector, with: NSNumber(value: relative))
+        }
     }
 
     func stop() {
@@ -322,6 +344,8 @@ final class VideoContainerView: UIView {
 /// on iPad. To show the picture somewhere else, resize and move the one surface (see MainVideoLayer).
 struct PlayerSurface: UIViewRepresentable {
     let controller: PlayerController
+    /// True while the picture is shown somewhere else (on a TV through AirPlay); the surface then leaves it there.
+    var detached = false
 
     func makeUIView(context: Context) -> SurfaceHostView {
         let view = SurfaceHostView()
@@ -333,7 +357,7 @@ struct PlayerSurface: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SurfaceHostView, context: Context) {
-        uiView.host(controller.videoView)
+        if !detached { uiView.host(controller.videoView) }
     }
 }
 

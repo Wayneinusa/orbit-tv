@@ -80,6 +80,14 @@ struct SettingsView: View {
                         Text("HLS (m3u8)").tag("m3u8")
                     }
                     Toggle("Reconnect automatically when a channel freezes", isOn: $settings.autoReconnect)
+                    Picker("Subtitle size", selection: $settings.subtitleScale) {
+                        ForEach(AppSettings.subtitleScales, id: \.self) { percent in
+                            Text(percent == 100 ? "100% (normal)" : "\(percent)%").tag(percent)
+                        }
+                    }
+                    Text("Subtitle size applies to subtitles and to the closed captions built into channels. Subtitles that a channel sends as pictures keep the size the channel gives them.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     TextField("User-Agent (optional)", text: $settings.userAgent)
                         .autocorrectionDisabled(true)
                     Text("Changing the stream format takes effect after reloading the playlist.")
@@ -107,6 +115,15 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                #if os(iOS)
+                Section("AirPlay") {
+                    Toggle("Fill the TV screen when mirroring", isOn: $settings.airPlayFullScreen)
+                    Text("To watch on an Apple TV, open Control Centre, tap Screen Mirroring and choose the Apple TV. With this switch on, the picture is drawn on the TV at full size and the iPad keeps the controls. With it off, the TV shows a copy of the iPad's screen. A change takes effect the next time mirroring starts.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                #endif
 
                 Section("Channel groups") {
                     Button("Choose which groups to show…") { showGroups = true }

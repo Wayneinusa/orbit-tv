@@ -27,6 +27,9 @@ final class AppServices: ObservableObject {
 
 @main
 struct OrbitTVApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     @StateObject private var services = AppServices()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -135,11 +138,13 @@ struct PreviewAnchorKey: PreferenceKey {
 struct MainVideoLayer: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var player: PlayerController
+    @ObservedObject private var external = ExternalDisplay.shared
     let previewAnchor: Anchor<CGRect>?
 
     var body: some View {
         GeometryReader { proxy in
             let full = router.fullscreen
+            let onTV = external.isConnected
             let preview: CGRect? = previewAnchor.map { proxy[$0] }
             let rect: CGRect = full
                 ? CGRect(origin: .zero, size: proxy.size)
@@ -148,8 +153,9 @@ struct MainVideoLayer: View {
 
             ZStack(alignment: .topLeading) {
                 Color.black.opacity(full ? 1 : 0)
-                PlayerSurface(controller: player)
+                PlayerSurface(controller: player, detached: onTV)
                     .frame(width: max(8, rect.width), height: max(8, rect.height))
+                    .overlay(onTVNote(shown: onTV, large: full))
                     .overlay(previewStatus(full: full))
                     .clipShape(RoundedRectangle(cornerRadius: full ? 0 : Theme.corner, style: .continuous))
                     .offset(x: rect.minX, y: rect.minY)
@@ -159,6 +165,34 @@ struct MainVideoLayer: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .onAppear { route(external.isConnected, moved: false) }
+        .onChange(of: external.isConnected) { connected in route(connected, moved: true) }
+        .onChange(of: player.item?.id) { _ in external.setPlaying(player.item != nil) }
+    }
+
+    /// Sends the picture to the TV when one is connected through AirPlay, and takes it back afterwards.
+    private func route(_ toTV: Bool, moved: Bool) {
+        if toTV { external.show(player.videoView) }
+        external.setPlaying(player.item != nil)
+        // The picture changed screens while playing: start it again so that VLC draws in its new place.
+        if moved && player.item != nil {
+            let controller = player
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                controller.restart()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func onTVNote(shown: Bool, large: Bool) -> some View {
+        if shown {
+            VStack(spacing: large ? 12 : 6) {
+                Image(systemName: "airplayvideo").font(.system(size: large ? 54 : 26))
+                Text("Playing on the TV").font(large ? .title3 : .footnote)
+            }
+            .foregroundColor(Theme.secondaryText)
+        }
     }
 
     /// Spinner and error text for the preview. Full screen has its own, drawn by PlayerScreen.

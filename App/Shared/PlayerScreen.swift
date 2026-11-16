@@ -21,6 +21,8 @@ struct PlayerScreen: View {
     @State private var showSubtitles = false
     @State private var recordTarget: Channel?
     @State private var scrubValue: Double?
+    @State private var showAirPlay = false
+    @ObservedObject private var external = ExternalDisplay.shared
 
     private var isLive: Bool { player.item?.isLive ?? false }
 
@@ -73,6 +75,13 @@ struct PlayerScreen: View {
             RecordSheet(channel: channel)
         }
         #if os(iOS)
+        .alert("AirPlay", isPresented: $showAirPlay) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(external.isConnected
+                 ? "The picture is playing on the TV. To bring it back to the iPad, open Control Centre, tap Screen Mirroring and choose Stop Mirroring."
+                 : "Open Control Centre (swipe down from the top right corner), tap Screen Mirroring and choose your Apple TV. The picture then fills the TV and the iPad keeps the controls.")
+        }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         #endif
@@ -316,6 +325,11 @@ struct PlayerScreen: View {
                         player.cycleAspect()
                         touch()
                     }
+                    #if os(iOS)
+                    IconButton(symbol: "airplayvideo", label: external.isConnected ? "On TV" : "AirPlay", active: external.isConnected) {
+                        showAirPlay = true
+                    }
+                    #endif
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, Theme.isTV ? 16 : 6)
