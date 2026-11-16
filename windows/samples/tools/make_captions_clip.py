@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Builds samples/captions.ts: a short clip that carries both kinds of US closed captions.
+"""Builds samples/captions.ts: a short clip that carries US closed captions.
 
-  * CEA-608 ("classic") captions, the kind VLC always draws at one fixed size
-  * CEA-708 ("digital", DTVCC) captions, whose size follows the subtitle size setting
+It carries CEA-608 ("classic") captions, the white-on-black block letters most US channels send, which
+VLC lists as "Closed captions 1". It also carries a CEA-708 (DTVCC) packet, but VLC does not list a
+track for that one, so only the 608 captions are used.
 
-The app's self-test plays this clip to check that the subtitle size setting works for captions.
+The app's self-test plays this clip to check that the subtitle size setting also resizes captions.
 Needs ffmpeg with libx264.  Usage:  python3 make_captions_clip.py OUTPUT.ts
 """
 import subprocess

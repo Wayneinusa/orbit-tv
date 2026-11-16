@@ -451,7 +451,7 @@ public sealed class SettingsPage : PageBase
         Check("Use hardware video decoding (takes effect after restarting the app)", s.HardwareDecoding, value => s.HardwareDecoding = value);
         Combo("Subtitle size", Settings.SubtitleScales.Select(percent => (percent == 100 ? "100% (normal)" : percent + "%", percent)).ToArray(),
             s.SubtitleScale, value => s.SubtitleScale = value);
-        Note("Subtitle size applies to text subtitles, from the next thing you play. It can also be changed while watching, under Subtitles in the player. Closed captions that are built into some channels, and subtitles sent as pictures, keep the size the channel gives them.");
+        Note("Subtitle size applies to subtitles and to the closed captions built into channels, from the next thing you play. It can also be changed while watching, under Subtitles in the player. Subtitles that a channel sends as pictures keep the size the channel gives them.");
         TextRow("User-Agent (optional)", s.UserAgent, value => s.UserAgent = value);
         Note("Playback speed (0.5× to 16×) is on the player's control bar for movies, episodes, catch-up, recordings and downloads. Keys: ] faster, [ slower, \\ normal.");
 

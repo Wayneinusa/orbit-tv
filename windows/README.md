@@ -17,7 +17,7 @@ An IPTV player for Windows 10 and Windows 11 (64-bit). It is a player only: it c
 | Recording | Record now, record a programme, schedule from the guide, or choose your own start and end time (Custom time). A channel that is already recording can have more recordings scheduled: its Record button and right-click menu then offer Stop and Schedule another. Reconnects by itself whenever the stream stops. Converted to MP4 automatically or on demand. Any folder, including a network drive. |
 | Multi-view | Two or four channels at once |
 | Search | Channels, movies, series and the guide in one box. A channel result has an Open category button that shows its category in Live TV |
-| Subtitles | Text size from 40% to 150%, in Settings or under Subtitles in the player. Applies to text subtitles; closed captions built into a channel and picture subtitles keep their own size |
+| Subtitles | Text size from 40% to 150%, in Settings or under Subtitles in the player. Applies to subtitles and to the closed captions built into channels (CEA-608); subtitles sent as pictures keep their own size |
 | Clock | Times are shown in 12-hour format (4:36 PM); 24-hour can be chosen in Settings |
 
 ## Keyboard in the player

@@ -24,19 +24,30 @@ public sealed class PlayerEngine : IDisposable
     private static readonly object LibraryGate = new();
 
     /// <summary>
-    /// When not empty, these VLC options are used in place of the subtitle size setting. Only the
-    /// self-test sets this, to measure what each option does to subtitles and captions.
+    /// The VLC options that give subtitles and closed captions the wanted size (percent of normal).
+    ///
+    /// Measured on the build server: "sub-text-scale" resizes ordinary subtitles but leaves the closed
+    /// captions of US channels (CEA-608) untouched. "freetype-rel-fontsize" forces one size on all text,
+    /// captions included: a line of text becomes 1/N of the picture height. Captions are normally about
+    /// 1/19.9 of the height and subtitles 1/16, so the forced size is set from the caption size and
+    /// subtitles are scaled up by 124% on top, which keeps both in the same proportion to their normal size.
+    /// At 100% nothing is forced and VLC uses its own sizes.
     /// </summary>
-    public static string[] TestOptions = Array.Empty<string>();
+    public static string[] SubtitleSizeOptions(int percent)
+    {
+        percent = Math.Clamp(percent, 10, 500);
+        if (percent == 100) return new[] { "--sub-text-scale=100" };
+        int lineFraction = Math.Max(4, (int)Math.Round(1988.0 / percent));
+        return new[] { "--freetype-rel-fontsize=" + lineFraction, "--sub-text-scale=124" };
+    }
 
     /// <summary>
-    /// The shared VLC instance for the current settings (created on first use). The subtitle text size can
+    /// The shared VLC instance for the current settings (created on first use). The subtitle size can
     /// only be given to VLC when an instance is created, so there is one instance per size that was used.
     /// </summary>
     public static Vlc.LibVLC Library(Settings settings)
     {
-        int scale = Math.Clamp(settings?.SubtitleScale ?? 100, 10, 500);
-        string[] sizeOptions = TestOptions.Length > 0 ? TestOptions : new[] { "--sub-text-scale=" + scale };
+        string[] sizeOptions = SubtitleSizeOptions(settings?.SubtitleScale ?? 100);
         string key = string.Join(" ", sizeOptions);
         lock (LibraryGate)
         {

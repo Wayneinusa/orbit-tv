@@ -173,10 +173,10 @@ public static class SelfTest
     }
 
     /// <summary>
-    /// Describes the white text on screen: how many near-white dots, and how many screen rows hold any.
-    /// The row count is a direct measure of how tall the letters are.
+    /// Measures the white text on screen: how many near-white dots there are, how many screen rows hold
+    /// any, and the width and height of the box around them. Width and rows follow the size of the letters.
     /// </summary>
-    private static string WhiteText(MainForm form)
+    private static (int Count, int Rows, int Width, int Height) WhiteText(MainForm form)
     {
         try
         {
@@ -205,11 +205,12 @@ public static class SelfTest
                 if (top < 0) top = y;
                 bottom = y;
             }
-            return count == 0 ? "no white text" : $"{count} dots, {rows} rows tall, box {right - left + 1}x{bottom - top + 1} at y {top}";
+            return count == 0 ? (0, 0, 0, 0) : (count, rows, right - left + 1, bottom - top + 1);
         }
         catch (Exception ex)
         {
-            return "screen not readable: " + ex.Message;
+            Log("note  Could not read the screen: " + ex.Message);
+            return (-1, 0, 0, 0);
         }
     }
 
@@ -487,64 +488,48 @@ public static class SelfTest
         }
         app.Settings.SubtitleScale = 100;
 
-        // 7c. Measurements: what each VLC text-size option does to subtitles and to the two kinds of
-        // closed captions US channels carry. The results decide how the subtitle size setting is applied.
+        // 7c. Closed captions built into a channel (the white-on-black block letters of US channels)
+        // follow the same setting.
         string captions = Path.Combine(server.SamplesFolder, "captions.ts");
+        async Task<(int Count, int Rows, int Width, int Height)> MeasureCaptions(int percent, string picture)
+        {
+            app.Settings.SubtitleScale = percent;
+            player.Play(new PlayableItem { Id = "selftest:captions" + percent, Kind = PlayKind.Download, Title = "Caption test", Url = captions });
+            await Task.Delay(600);
+            await Wait(() => player.Status == PlayerStatus.Playing && player.TimeMs > 300, 15);
+            bool IsClassic(TrackOption t) => t.Name.Contains("Closed captions 1", StringComparison.OrdinalIgnoreCase) && !t.Name.Contains("DTVCC", StringComparison.OrdinalIgnoreCase);
+            await Wait(() => player.SubtitleTracks.Any(IsClassic), 8);
+            TrackOption track = player.SubtitleTracks.FirstOrDefault(IsClassic);
+            if (track == null) return (-1, 0, 0, 0);
+            player.SelectSubtitle(track.Id);
+            // The caption line is typed again and again; the widest reading is the complete line.
+            (int Count, int Rows, int Width, int Height) best = (0, 0, 0, 0);
+            for (int i = 0; i < 9; i++)
+            {
+                await Task.Delay(500);
+                var reading = WhiteText(form);
+                if (reading.Width > best.Width) best = reading;
+            }
+            await Shot(form, picture, true);
+            return best;
+        }
         if (File.Exists(captions))
         {
-            var optionSets = new (string Label, string[] Options)[]
+            var captionsNormal = await MeasureCaptions(100, "captions-100");
+            var captionsHalf = await MeasureCaptions(50, "captions-50");
+            string captionSizes = $"caption line {captionsNormal.Width} dots wide at 100%, {captionsHalf.Width} at 50%";
+            if (captionsNormal.Count < 0 || captionsHalf.Count < 0)
             {
-                ("normal", new[] { "--sub-text-scale=100" }),
-                ("sub-text-scale=50", new[] { "--sub-text-scale=50" }),
-                ("freetype-rel-fontsize=32", new[] { "--freetype-rel-fontsize=32" }),
-                ("freetype-fontsize=14", new[] { "--freetype-fontsize=14" })
-            };
-            var clips = new (string Label, string File, string Track)[]
-            {
-                ("subtitle file", subtitled, null),
-                ("608 captions", captions, "Closed captions 1"),
-                ("708 captions", captions, "DTVCC")
-            };
-            int probe = 0;
-            foreach (var (optionLabel, options) in optionSets)
-            {
-                PlayerEngine.TestOptions = options;
-                foreach (var (clipLabel, file, track) in clips)
-                {
-                    probe++;
-                    try
-                    {
-                        player.Play(new PlayableItem { Id = "selftest:probe" + probe, Kind = PlayKind.Download, Title = clipLabel, Url = file });
-                        await Task.Delay(600);
-                        await Wait(() => player.Status == PlayerStatus.Playing && player.TimeMs > 300, 15);
-                        await Wait(() => player.SubtitleTracks.Count > 0, 6);
-                        string names = string.Join(" / ", player.SubtitleTracks.Select(t => t.Id + ":" + t.Name));
-                        string picked = "automatic";
-                        if (track != null)
-                        {
-                            TrackOption wanted = player.SubtitleTracks.FirstOrDefault(t => t.Name.Contains(track, StringComparison.OrdinalIgnoreCase) && (track != "Closed captions 1" || !t.Name.Contains("DTVCC", StringComparison.OrdinalIgnoreCase)));
-                            if (wanted != null)
-                            {
-                                player.SelectSubtitle(wanted.Id);
-                                picked = wanted.Name;
-                            }
-                            else
-                            {
-                                picked = "TRACK NOT FOUND";
-                            }
-                        }
-                        await Task.Delay(4000);
-                        Log($"probe {optionLabel,-26} {clipLabel,-14} track [{picked}] -> {WhiteText(form)}   (tracks: {names})");
-                        if (optionLabel == "normal" || clipLabel != "subtitle file") await Shot(form, $"probe-{probe:00}", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"probe {optionLabel} {clipLabel} failed: {ex.Message}");
-                    }
-                }
+                Check("The test clip's closed captions are found", false, "tracks: " + string.Join(" / ", player.SubtitleTracks.Select(t => t.Name)));
             }
-            PlayerEngine.TestOptions = Array.Empty<string>();
+            else
+            {
+                Check("Closed captions are drawn on the picture", captionsNormal.Width > 100, captionSizes);
+                Check("Subtitle size 50% also draws closed captions clearly smaller",
+                    captionsHalf.Width > 40 && captionsHalf.Width <= captionsNormal.Width * 0.62, captionSizes);
+            }
         }
+        app.Settings.SubtitleScale = 100;
         form.ClosePlayer();
         await Task.Delay(500);
 
